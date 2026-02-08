@@ -1,0 +1,291 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ========================================
+   液态玻璃效果主题配置
+   ======================================== */
+@layer base {
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background: #F5F5F7;
+    color: #1D1D1F;
+  }
+
+  /* macOS 红绿灯按钮区域 padding */
+  body.platform-macos #root {
+    height: calc(100% - 36px);
+    margin-top: 36px;
+  }
+
+  /* 背景渐变装饰 */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -50%;
+    right: -30%;
+    width: 80%;
+    height: 80%;
+    background: radial-gradient(
+      circle at center,
+      rgba(0, 122, 255, 0.08) 0%,
+      rgba(88, 86, 214, 0.04) 50%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(60px);
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    bottom: -40%;
+    left: -20%;
+    width: 60%;
+    height: 60%;
+    background: radial-gradient(
+      circle at center,
+      rgba(255, 45, 85, 0.06) 0%,
+      rgba(255, 149, 0, 0.03) 50%,
+      transparent 70%
+    );
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    filter: blur(80px);
+  }
+}
+
+/* ========================================
+   液态玻璃组件样式
+   ======================================== */
+@layer components {
+  /* 液态玻璃卡片 */
+  .glass-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.08),
+      0 0 0 1px rgba(255, 255, 255, 0.5) inset,
+      0 1px 0 rgba(255, 255, 255, 0.8) inset;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    overflow: hidden;
+  }
+
+  .glass-card:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 12px 48px rgba(0, 0, 0, 0.12),
+      0 0 0 1px rgba(255, 255, 255, 0.6) inset,
+      0 1px 0 rgba(255, 255, 255, 0.9) inset;
+    border-color: rgba(255, 255, 255, 0.8);
+  }
+
+  /* 液态玻璃按钮 */
+  .glass-button {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 1.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 0.9375rem;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    overflow: hidden;
+    color: #1D1D1F;
+  }
+
+  .glass-button:hover {
+    transform: translateY(-1px) scale(1.02);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    border-color: rgba(255, 255, 255, 0.8);
+  }
+
+  .glass-button:active {
+    transform: translateY(0) scale(0.98);
+  }
+
+  /* 主按钮样式 */
+  .glass-button-primary {
+    background: black;
+    border: none;
+    border-radius: 1.5rem;
+    color: white;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  }
+
+  .glass-button-primary:hover {
+    box-shadow:
+      0 6px 24px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  }
+
+  /* 液态玻璃输入框 */
+  .glass-input {
+    position: relative;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-radius: 1rem;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    color: #1D1D1F;
+    font-size: 0.9375rem;
+    transition: all 0.3s ease;
+    outline: none;
+  }
+
+  .glass-input::placeholder {
+    color: #86868B;
+  }
+
+  .glass-input:focus {
+    border-color: #007AFF;
+    box-shadow:
+      0 0 0 4px rgba(0, 122, 255, 0.1),
+      0 2px 8px rgba(0, 0, 0, 0.04);
+    background: rgba(255, 255, 255, 0.8);
+  }
+
+  /* 隐藏滚动条 */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 苹果渐变文字 */
+  .gradient-text {
+    background: linear-gradient(135deg, #007AFF 0%, #5856D6 50%, #FF2D55 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Bento Grid 布局 */
+  .bento-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: minmax(5rem, auto);
+  }
+
+  .bento-item {
+    grid-column: span 6;
+    grid-row: span 1;
+  }
+
+  @media (max-width: 768px) {
+    .bento-item {
+      grid-column: span 12;
+    }
+  }
+
+  /* 动画关键帧 */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% {
+      box-shadow:
+        0 0 20px rgba(0, 122, 255, 0.2),
+        0 0 40px rgba(88, 86, 214, 0.1);
+    }
+    50% {
+      box-shadow:
+        0 0 30px rgba(0, 122, 255, 0.3),
+        0 0 60px rgba(88, 86, 214, 0.2);
+    }
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* 浮动动画 */
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-float-delayed {
+    animation: float 6s ease-in-out infinite;
+    animation-delay: -3s;
+  }
+
+  /* 脉冲光晕 */
+  .pulse-glow {
+    animation: pulse-glow 3s ease-in-out infinite;
+  }
+}
+
+/* ========================================
+   自定义颜色（Tailwind v3 兼容）
+   ======================================== */
+@layer utilities {
+  .text-primary {
+    color: #1D1D1F;
+  }
+
+  .text-secondary {
+    color: #86868B;
+  }
+
+  .bg-background {
+    background-color: #F5F5F7;
+  }
+
+  .bg-surface {
+    background-color: #FFFFFF;
+  }
+}

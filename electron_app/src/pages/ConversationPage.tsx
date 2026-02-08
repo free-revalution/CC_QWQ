@@ -1,0 +1,1778 @@
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle } from 'lucide-react'
+import Card from '../components/ui/Card'
+import MessageContent from '../components/ui/MessageContent'
+import FileReferenceMenu from '../components/ui/FileReferenceMenu'
+import CommandMenu from '../components/ui/CommandMenu'
+import ModelSettings from '../components/ui/ModelSettings'
+import GitStatusPanel from '../components/ui/GitStatusPanel'
+import FileSearchPanel from '../components/ui/FileSearchPanel'
+import { ipc } from '../lib/ipc'
+import {
+  loadConversations,
+  saveConversations,
+  deleteConversation as deleteConversationStorage,
+  createConversation,
+  getCurrentConversationId,
+  setCurrentConversationId as saveCurrentConversationId,
+} from '../lib/storage'
+import type { Message, Conversation } from '../types'
+
+// 过滤模式类型
+export type FilterMode = 'talk' | 'develop'
+
+// 响应式断点
+const BREAKPOINTS = {
+  sm: 640,   // 小屏幕
+  md: 768,   // 中等屏幕
+  lg: 1024,  // 大屏幕
+  xl: 1280,  // 超大屏幕
+}
+
+interface ConversationPageProps {
+  projectPath: string | null
+  onOpenSettings: () => void
+}
+
+export default function ConversationPage({
+  // 项目路径 - 用于 WebSocket 服务器
+  projectPath,
+  // 打开设置弹窗回调
+  onOpenSettings,
+}: ConversationPageProps) {
+  // 对话列表状态
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  // 当前选中对话 ID
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null)
+  // 输入框值
+  const [inputValue, setInputValue] = useState('')
+  // 搜索查询
+  const [searchQuery, setSearchQuery] = useState('')
+  // 附加的文件
+  const [attachedFiles, setAttachedFiles] = useState<Array<{ name: string; path: string; content: string }>>([])
+  // 上下文菜单状态
+  const [showMenu, setShowMenu] = useState(false)
+  // 上下文菜单位置
+  const [showContext, setShowContext] = useState(false)
+  // 加载状态
+  const [isLoading, setIsLoading] = useState(false)
+  // 错误状态
+  const [error, setError] = useState<string | null>(null)
+  // 消息计数器 - 用于生成唯一消息 ID 
+  const [messageCounter, setMessageCounter] = useState(0)
+  // IME 输入法状态 - 用于防止在输入中文时按回车发送消息
+  const [isComposing, setIsComposing] = useState(false)
+  // 输入框引用 - 用于聚焦和滚动
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  // 上下文菜单引用 - 用于定位
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  // 信任文件夹弹窗状态
+  const [trustRequest, setTrustRequest] = useState<{ conversationId: string; projectPath: string; message: string } | null>(null)
+  // 权限弹窗状态
+  const [permissionRequest, setPermissionRequest] = useState<{ conversationId: string; projectPath: string; toolName: string; details: string } | null>(null)
+
+  // 模型设置弹窗状态
+  const [showModelSettings, setShowModelSettings] = useState(false)
+
+  // 重命名弹窗状态
+  const [renameDialog, setRenameDialog] = useState<{
+    visible: boolean
+    conversationId: string | null
+    currentTitle: string
+  }>({ visible: false, conversationId: null, currentTitle: '' })
+  const [newTitle, setNewTitle] = useState('')
+
+  // 菜单状态
+  const [fileMenuVisible, setFileMenuVisible] = useState(false)
+  const [commandMenuVisible, setCommandMenuVisible] = useState(false)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0, width: 0, height: 0 })
+  const inputContainerRef = useRef<HTMLDivElement>(null)
+
+  // 上下文菜单状态
+  const [contextMenuData, setContextMenuData] = useState({
+    visible: false,
+    position: { x: 0, y: 0 },
+    conversationId: ''
+  })
+
+  // 响应式状态
+  const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [sidebarVisible, setSidebarVisible] = useState(true) // 移动端完全隐藏侧边栏
+
+  // Git 状态面板
+  const [gitPanelVisible, setGitPanelVisible] = useState(false)
+
+  // 文件搜索面板
+  const [searchPanelVisible, setSearchPanelVisible] = useState(false)
+
+  // 过滤模式：Talk（只显示回复文本）或 Develop（显示操作过程）
+  const [filterMode, setFilterMode] = useState<FilterMode>('develop')
+  const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
+
+  // 当前正在处理的 Claude 消息 ID (assistantId) - 使用 ref 以避免异步状态更新问题
+  const currentClaudeMessageIdRef = useRef<string | null>(null)
+  // 消息 ID 映射 (backend messageId -> frontend assistantId)
+  const messageIdMapRef = useRef<Map<string, string>>(new Map())
+
+  const currentConversation = conversations.find(
+    (c) => c.id === currentConversationId
+  )
+
+  // 初始化：从 localStorage 加载对话，本地存储
+  useEffect(() => {
+    if (projectPath) {
+      // 设置当前项目路径到主进程（用于 WebSocket 服务器）
+      ipc.setProjectPath(projectPath).catch(console.error)
+
+      const loaded = loadConversations()
+      const projectConversations = loaded
+        .filter(c => c.projectId === projectPath)
+        .map(conv => ({
+          ...conv,
+          // 去重消息：按 ID 去重，保留首次出现的
+          messages: conv.messages.filter((msg, index, self) =>
+            index === self.findIndex(m => m.id === msg.id)
+          ),
+        }))
+
+      // 找出最大的 messageCounter 值，避免新消息 ID 冲突
+      let maxCounter = 0
+      projectConversations.forEach(conv => {
+        conv.messages.forEach(msg => {
+          const match = msg.id.match(/^(user|assistant)-(\d+)$/)
+          if (match) {
+            const counter = parseInt(match[2], 10)
+            if (counter > maxCounter) {
+              maxCounter = counter
+            }
+          }
+        })
+      })
+      setMessageCounter(maxCounter + 1)
+
+      if (projectConversations.length === 0) {
+        // 没有对话，创建一个新对话
+        const newConv = createConversation(projectPath)
+        setConversations([newConv])
+        setCurrentConversationId(newConv.id)
+        saveConversations([newConv])
+        saveCurrentConversationId(newConv.id)
+      } else {
+        setConversations(projectConversations)
+        // 恢复上次打开的对话
+        const savedId = getCurrentConversationId()
+        const validId = projectConversations.find(c => c.id === savedId)?.id || projectConversations[0].id
+        setCurrentConversationId(validId)
+        saveCurrentConversationId(validId)
+      }
+    }
+  }, [projectPath])
+
+  // 保存对话到 localStorage
+  useEffect(() => {
+    if (conversations.length > 0) {
+      saveConversations(conversations)
+    }
+  }, [conversations])
+
+  // 切换对话或消息更新时，同步完整的聊天历史到移动端
+  useEffect(() => {
+    if (currentConversation) {
+      // 更新完整的聊天历史
+      console.log('=== Update Chat History Effect ===')
+      console.log('Current conversation ID:', currentConversationId)
+      console.log('Messages count:', currentConversation.messages.length)
+      console.log('Message IDs:', currentConversation.messages.map(m => m.id))
+      ipc.updateChatHistory(currentConversation.messages).catch(console.error)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentConversationId, currentConversation?.messages.length]) // 当切换对话或消息数量变化时触发
+
+  // 保存当前对话 ID
+  useEffect(() => {
+    if (currentConversationId) {
+      saveCurrentConversationId(currentConversationId)
+    }
+  }, [currentConversationId])
+
+  // 监听来自主进程的信任文件夹请求
+  useEffect(() => {
+    const cleanupId = ipc.onTrustRequest((data) => {
+      console.log('Received trust request from main process:', data)
+      setTrustRequest(data)
+    })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [])
+
+  // 监听来自主进程的权限请求
+  useEffect(() => {
+    const cleanupId = ipc.onPermissionRequest((data) => {
+      console.log('Received permission request from main process:', data)
+      setPermissionRequest(data)
+    })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [])
+
+  // 监听 Claude 初始化状态变化
+  useEffect(() => {
+    const cleanupId = ipc.onClaudeStatusChange((data) => {
+      console.log('Received Claude status change:', data)
+      setConversations((prev) => {
+        return prev.map(conv => {
+          if (conv.id === data.conversationId) {
+            return { ...conv, claudeStatus: data.status }
+          }
+          return conv
+        })
+      })
+    })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [])
+
+  // 监听 Claude 流式输出
+  useEffect(() => {
+    const cleanupId = ipc.onClaudeStream((data) => {
+      console.log('Stream update:', data.type, data.content.slice(0, 100))
+
+      // 处理 done 事件
+      if (data.type === 'done') {
+        const assistantId = messageIdMapRef.current.get(data.messageId)
+        if (assistantId && currentClaudeMessageIdRef.current === assistantId) {
+          setIsLoading(false)
+          currentClaudeMessageIdRef.current = null
+          messageIdMapRef.current.delete(data.messageId)
+          console.log('Stream completed for:', assistantId, 'conversationId:', data.conversationId)
+        }
+        return
+      }
+
+      // 根据后端 messageId 找到对应的 assistantId
+      let assistantId = messageIdMapRef.current.get(data.messageId)
+
+      // 如果没有找到映射，但有当前活动的消息，可能是映射还没建立
+      if (!assistantId && currentClaudeMessageIdRef.current) {
+        console.log('No mapping found, using current active message:', currentClaudeMessageIdRef.current)
+        assistantId = currentClaudeMessageIdRef.current
+      }
+
+      if (!assistantId) {
+        console.log('No assistantId found for messageId:', data.messageId)
+        return
+      }
+
+      // 只处理当前活动的消息
+      if (currentClaudeMessageIdRef.current !== assistantId) {
+        console.log('Skipping non-active message:', assistantId, 'current:', currentClaudeMessageIdRef.current)
+        return
+      }
+
+      setConversations((prev) => {
+        return prev.map((conv) => {
+          // 路由到正确的对话（使用后端传来的 conversationId）
+          if (conv.id !== data.conversationId) return conv
+
+          const targetMessage = conv.messages.find(m => m.id === assistantId)
+
+          if (!targetMessage) {
+            // 消息不存在，创建新消息（直接使用当前内容）
+            console.log('Target message not found:', assistantId, 'creating with content length:', data.content.length)
+            const assistantMessage: Message = {
+              id: assistantId,
+              role: 'assistant',
+              content: data.content,
+              timestamp: Date.now(),
+            }
+            return {
+              ...conv,
+              messages: [...conv.messages, assistantMessage],
+              updatedAt: Date.now(),
+            }
+          }
+
+          // 消息已存在，追加新内容
+          const updatedMessage = {
+            ...targetMessage,
+            content: targetMessage.content + data.content,
+          }
+
+          return {
+            ...conv,
+            messages: conv.messages.map(m =>
+              m.id === assistantId ? updatedMessage : m
+            ),
+            updatedAt: Date.now(),
+          }
+        })
+      })
+    })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [currentConversationId])
+
+  // 点击外部关闭菜单（不包括上下文菜单区域）
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // 检查点击是否在上下文菜单区域内
+      const target = event.target as Node
+      const contextMenu = document.getElementById('context-menu')
+      if (contextMenu && contextMenu.contains(target)) {
+        return // 点击在菜单内，不关闭
+      }
+
+      if (menuRef.current && !menuRef.current.contains(target)) {
+        setShowMenu(false)
+        setShowContext(false)
+      }
+      // 关闭上下文菜单
+      setContextMenuData(prev => ({ ...prev, visible: false }))
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  // 监听窗口大小变化，处理响应式布局
+  useEffect(() => {
+    const handleResize = () => {
+      const newWidth = window.innerWidth
+      const newHeight = window.innerHeight
+      setWindowSize({ width: newWidth, height: newHeight })
+
+      // 自动处理侧边栏显示/隐藏
+      if (newWidth < BREAKPOINTS.md) {
+        // 小屏幕：完全隐藏侧边栏（通过抽屉式显示）
+        setSidebarVisible(false)
+      } else if (newWidth < BREAKPOINTS.lg) {
+        // 中等屏幕：折叠侧边栏
+        setSidebarCollapsed(true)
+        setSidebarVisible(true)
+      } else {
+        // 大屏幕：显示完整侧边栏
+        setSidebarCollapsed(false)
+        setSidebarVisible(true)
+      }
+    }
+
+    // 初始化
+    handleResize()
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  // 切换侧边栏显示（移动端抽屉式）
+  const toggleSidebar = useCallback(() => {
+    setSidebarVisible(prev => !prev)
+  }, [])
+
+  // 切换侧边栏折叠（桌面端）
+  const toggleSidebarCollapse = useCallback(() => {
+    setSidebarCollapsed(prev => !prev)
+  }, [])
+
+  const handleSendMessage = async () => {
+    if ((!inputValue.trim() && attachedFiles.length === 0) || !currentConversation || !projectPath) return
+
+    // 检查 Claude 是否已初始化完成（只有绿色状态才能发送消息）
+    if (currentConversation.claudeStatus !== 'ready') {
+      console.log('Claude not ready yet, status:', currentConversation.claudeStatus)
+      setError(currentConversation.claudeStatus === 'initializing'
+        ? 'Claude Code 正在初始化中，请稍等...'
+        : 'Claude Code 未启动，请先启动会话')
+      return
+    }
+
+    console.log('=== Send Message Start ===')
+    console.log('Current messageCounter:', messageCounter)
+    const userId = `user-${messageCounter}`
+    const assistantId = `assistant-${messageCounter}`
+    console.log('Generated IDs:', userId, assistantId)
+
+    // 构建消息内容（包含附件）
+    let messageContent = inputValue
+    if (attachedFiles.length > 0) {
+      const fileContents = attachedFiles.map(file =>
+        `\n\n[File: ${file.path}]\n${file.content}`
+      ).join('')
+      messageContent = inputValue + fileContents
+    }
+
+    const userMessage: Message = {
+      id: userId,
+      role: 'user',
+      content: messageContent,
+      timestamp: Date.now(),
+    }
+
+    // 添加用户消息
+    setConversations((prev) => {
+      const result = prev.map((conv) =>
+        conv.id === currentConversationId
+          ? {
+              ...conv,
+              // 检查是否已存在相同 ID 的消息，如果存在则跳过
+              messages: conv.messages.some(m => m.id === userMessage.id)
+                ? conv.messages
+                : [...conv.messages, userMessage],
+              updatedAt: Date.now(),
+              title: conv.title === 'New Conversation' ? inputValue.slice(0, 30) : conv.title,
+            }
+          : conv
+      )
+      return result
+    })
+
+    // 同步用户消息到移动端
+    ipc.addChatMessage(userMessage).catch(console.error)
+
+    setMessageCounter(messageCounter + 1)
+    setInputValue('')
+    setAttachedFiles([]) // 清空附件列表
+    setError(null)
+    setIsLoading(true)
+
+    // 先设置当前活动的消息 ID（在发送消息之前）
+    currentClaudeMessageIdRef.current = assistantId
+
+    try {
+      // 发送消息，获取消息 ID（传递 conversationId 和 filterMode 以实现会话隔离和过滤）
+      const { messageId } = await ipc.claudeSend(currentConversation.id, projectPath, messageContent, filterMode)
+
+      // 存储 messageId -> assistantId 映射
+      messageIdMapRef.current.set(messageId, assistantId)
+      console.log('Message ID mapping established:', messageId, '->', assistantId)
+
+      // 检查是否在模拟模式下
+      if (!window.electronAPI?.claudeSend) {
+        // 模拟流式响应
+        console.log('Running in mock mode, simulating streaming response...')
+        const mockResponse = `I understand you're asking about this project. Based on the context, this appears to be a desktop application built with Electron that connects to a mobile app. The application seems to use Claude Code for AI assistance.
+        
+Some key features I can see:
+- Project management with Git integration
+- File searching capabilities
+- Permission management for tools
+- Model settings for AI configuration
+- QR code generation for mobile connection
+
+Is there something specific you'd like to know or modify about this project?`
+        
+        // 模拟流式输出
+        let accumulatedContent = ''
+        const delay = 50 // 每个字符的延迟时间
+        
+        for (let i = 0; i < mockResponse.length; i++) {
+          accumulatedContent += mockResponse[i]
+          
+          // 使用 setTimeout 模拟异步流式输出
+          setTimeout(() => {
+            // 检查消息是否仍然是当前活动消息
+            if (currentClaudeMessageIdRef.current === assistantId) {
+              setConversations((prev) => {
+                const result = prev.map((conv) => {
+                  if (conv.id !== currentConversationId) return conv
+
+                  const targetMessage = conv.messages.find(m => m.id === assistantId)
+                  if (!targetMessage) {
+                    // 如果消息不存在，创建一个新的
+                    const assistantMessage: Message = {
+                      id: assistantId,
+                      role: 'assistant',
+                      content: accumulatedContent,
+                      timestamp: Date.now(),
+                    }
+                    return {
+                      ...conv,
+                      messages: [...conv.messages, assistantMessage],
+                      updatedAt: Date.now(),
+                    }
+                  }
+
+                  // 追加内容
+                  return {
+                    ...conv,
+                    messages: conv.messages.map(m =>
+                      m.id === assistantId
+                        ? { ...m, content: accumulatedContent }
+                        : m
+                    ),
+                    updatedAt: Date.now(),
+                  }
+                })
+                return result
+              })
+            }
+          }, i * delay)
+        }
+        
+        // 模拟完成事件
+        setTimeout(() => {
+          if (currentClaudeMessageIdRef.current === assistantId) {
+            setIsLoading(false)
+            currentClaudeMessageIdRef.current = null
+            messageIdMapRef.current.delete(messageId)
+            console.log('Mock stream completed for:', assistantId)
+          }
+        }, mockResponse.length * delay + 100)
+      }
+    } catch (err) {
+      console.error('Claude error:', err)
+      setError(err instanceof Error ? err.message : 'Failed to send message to Claude')
+      setIsLoading(false)
+    }
+  }
+
+  const handleNewConversation = async () => {
+    if (!projectPath) return
+
+    const newConv = createConversation(projectPath)
+    setConversations((prev) => [newConv, ...prev])
+    setCurrentConversationId(newConv.id)
+
+    // 立即初始化 Claude 会话
+    try {
+      console.log('Initializing Claude for conversation:', newConv.id, 'Project:', projectPath)
+      await ipc.initializeClaude(newConv.id, projectPath)
+    } catch (error) {
+      console.error('Failed to initialize Claude session:', error)
+    }
+  }
+
+  const handleDeleteConversation = async (conversationId: string) => {
+    // 清理对话对应的 PTY 会话
+    try {
+      await ipc.cleanupConversation(conversationId)
+      console.log('Cleanup conversation session:', conversationId)
+    } catch (error) {
+      console.error('Failed to cleanup conversation session:', error)
+    }
+
+    deleteConversationStorage(conversationId)
+
+    setConversations((prev) => {
+      const filtered = prev.filter(c => c.id !== conversationId)
+
+      // 保存更新后的对话列表
+      saveConversations(filtered)
+
+      // 如果删除的是当前对话，切换到其他对话
+      if (conversationId === currentConversationId) {
+        const nextConv = filtered[0]
+        if (nextConv) {
+          setCurrentConversationId(nextConv.id)
+        } else {
+          // 没有对话了，创建新对话
+          const newConv = createConversation(projectPath!)
+          saveConversations([newConv])
+          setCurrentConversationId(newConv.id)
+          return [newConv]
+        }
+      }
+
+      return filtered.length > 0 ? filtered : [createConversation(projectPath!)]
+    })
+
+    // 关闭上下文菜单
+    setContextMenuData(prev => ({ ...prev, visible: false }))
+  }
+
+  const handlePinConversation = (conversationId: string) => {
+    setConversations((prev) => {
+      const conversation = prev.find(c => c.id === conversationId)
+      if (!conversation) return prev
+
+      // 切换置顶状态
+      const updatedConv = { ...conversation, isPinned: !conversation.isPinned }
+
+      // Remove the conversation from its current position
+      const filtered = prev.filter(c => c.id !== conversationId)
+
+      // 如果置顶，添加到开头；否则添加到原位置附近（置顶组之后）
+      let updated: Conversation[]
+      if (updatedConv.isPinned) {
+        updated = [updatedConv, ...filtered]
+      } else {
+        // 取消置顶，放到非置顶对话的开头
+        const pinned = filtered.filter(c => c.isPinned)
+        const unpinned = filtered.filter(c => !c.isPinned)
+        updated = [...pinned, updatedConv, ...unpinned]
+      }
+
+      // 保存更新后的对话列表
+      saveConversations(updated)
+
+      return updated
+    })
+
+    // 关闭上下文菜单
+    setContextMenuData(prev => ({ ...prev, visible: false }))
+  }
+
+  const handleRenameConversation = (conversationId: string) => {
+    const conversation = conversations.find(c => c.id === conversationId)
+    if (conversation) {
+      setRenameDialog({
+        visible: true,
+        conversationId,
+        currentTitle: conversation.title
+      })
+      setNewTitle(conversation.title)
+    }
+    // 关闭上下文菜单
+    setContextMenuData(prev => ({ ...prev, visible: false }))
+  }
+
+  const handleSaveRename = () => {
+    if (renameDialog.conversationId && newTitle.trim()) {
+      setConversations((prev) => {
+        const updated = prev.map(c =>
+          c.id === renameDialog.conversationId
+            ? { ...c, title: newTitle.trim() }
+            : c
+        )
+        // 保存更新后的对话列表
+        saveConversations(updated)
+        return updated
+      })
+    }
+    // 关闭重命名弹窗
+    setRenameDialog({ visible: false, conversationId: null, currentTitle: '' })
+    setNewTitle('')
+  }
+
+  const handleCancelRename = () => {
+    setRenameDialog({ visible: false, conversationId: null, currentTitle: '' })
+    setNewTitle('')
+  }
+
+  // 处理权限响应
+  const handlePermissionResponse = async (choice: string) => {
+    console.log('Permission response:', choice)
+
+    if (!permissionRequest) return
+
+    // 将授权结果发送回给 Claude（通过 IPC，传递 conversationId）
+    await ipc.respondPermission(permissionRequest.conversationId, choice)
+    console.log('Permission response sent to Claude:', choice)
+
+    // 关闭弹窗
+    setPermissionRequest(null)
+  }
+
+  // 处理信任文件夹响应
+  const handleTrustResponse = async (trust: boolean) => {
+    console.log('Trust response:', trust)
+
+    if (!trustRequest) return
+
+    // 将信任结果发送回给 Claude（通过 IPC，传递 conversationId）
+    await ipc.respondTrust(trustRequest.conversationId, trust)
+    console.log('Trust response sent to Claude:', trust)
+
+    // 关闭弹窗
+    setTrustRequest(null)
+  }
+
+  // 处理输入变化，检测 # 和 /
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setInputValue(value)
+
+    // 检测最后一个字符
+    const lastChar = value.slice(-1)
+
+    if (lastChar === '#') {
+      // 显示文件引用菜单
+      showMenuAtPosition('file')
+    } else if (lastChar === '/') {
+      // 显示命令菜单
+      showMenuAtPosition('command')
+    } else {
+      // 其他情况关闭菜单
+      setFileMenuVisible(false)
+      setCommandMenuVisible(false)
+    }
+  }
+
+  // 处理 Tab 键补全
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab' && !e.shiftKey) {
+      if (fileMenuVisible || commandMenuVisible) {
+        e.preventDefault()
+        // Tab 键由菜单处理
+      }
+    }
+  }
+
+  // 显示菜单在指定位置
+  const showMenuAtPosition = (menuType: 'file' | 'command') => {
+    if (!inputContainerRef.current) return
+
+    const rect = inputContainerRef.current.getBoundingClientRect()
+    // 计算菜单高度（输入框高度的1.5倍）
+    const menuHeight = rect.height * 1.5
+    // 菜单位置：聊天内容区域顶部（输入框上方，留出菜单高度的空间）
+    const menuTop = rect.top - menuHeight - 16 // 16px 间距
+
+    setMenuPosition({
+      top: menuTop,
+      left: rect.left,
+      width: rect.width,
+      height: menuHeight,
+    })
+
+    if (menuType === 'file') {
+      setFileMenuVisible(true)
+      setCommandMenuVisible(false)
+    } else {
+      setFileMenuVisible(false)
+      setCommandMenuVisible(true)
+    }
+  }
+
+  // 更新菜单位置（在窗口移动或大小变化时调用）
+  const updateMenuPosition = useCallback(() => {
+    if (!inputContainerRef.current) return
+    if (!fileMenuVisible && !commandMenuVisible) return
+
+    const rect = inputContainerRef.current.getBoundingClientRect()
+    const menuHeight = rect.height * 1.5
+    const menuTop = rect.top - menuHeight - 16
+
+    setMenuPosition({
+      top: menuTop,
+      left: rect.left,
+      width: rect.width,
+      height: menuHeight,
+    })
+  }, [fileMenuVisible, commandMenuVisible])
+
+  // 监听窗口变化，更新菜单位置
+  useEffect(() => {
+    if (fileMenuVisible || commandMenuVisible) {
+      // 使用 requestAnimationFrame 持续更新位置
+      let animationFrameId: number
+
+      const updatePosition = () => {
+        updateMenuPosition()
+        animationFrameId = requestAnimationFrame(updatePosition)
+      }
+
+      updatePosition()
+
+      return () => {
+        if (animationFrameId) {
+          cancelAnimationFrame(animationFrameId)
+        }
+      }
+    }
+  }, [fileMenuVisible, commandMenuVisible, updateMenuPosition])
+
+  // 处理文件引用选择
+  const handleFileSelect = (filePath: string) => {
+    // 将文件路径插入到输入框，替换 # 符号
+    const newValue = inputValue.slice(0, -1) + `@${filePath} `
+    setInputValue(newValue)
+    inputRef.current?.focus()
+  }
+
+  // 处理命令选择
+  const handleCommandSelect = (commandId: string) => {
+    // 特殊命令处理
+    if (commandId === '/model') {
+      setShowModelSettings(true)
+      setInputValue(inputValue.slice(0, -1)) // 移除 / 符号
+      return
+    }
+
+    // /help - 显示帮助信息
+    if (commandId === '/help') {
+      handleShowHelp()
+      setInputValue('')
+      return
+    }
+
+    // /clear - 清空当前对话
+    if (commandId === '/clear') {
+      handleClearConversation()
+      setInputValue('')
+      return
+    }
+
+    // /settings - 打开设置页面
+    if (commandId === '/settings') {
+      onOpenSettings()
+      setInputValue('')
+      return
+    }
+
+    // /attach - 附加文件到对话
+    if (commandId === '/attach') {
+      handleAttachFile()
+      setInputValue('')
+      return
+    }
+
+    // /thinking - 切换思考模式
+    if (commandId === '/thinking') {
+      handleToggleThinking()
+      setInputValue('')
+      return
+    }
+
+    // /usage - 显示使用量统计
+    if (commandId === '/usage') {
+      setShowModelSettings(true)
+      setInputValue('')
+      return
+    }
+
+    // 其他命令：将命令插入到输入框
+    const newValue = inputValue.slice(0, -1) + `${commandId} `
+    setInputValue(newValue)
+    inputRef.current?.focus()
+  }
+
+  // 显示帮助信息
+  const handleShowHelp = () => {
+    const helpText = `# CC QwQ 帮助
+
+## 斜杠命令
+
+| 命令 | 描述 |
+|------|------|
+| /help | 显示此帮助信息 |
+| /clear | 清空当前对话 |
+| /settings | 打开设置页面 |
+| /model | 切换 AI 模型 |
+| /attach | 附加文件到对话 |
+| /thinking | 切换思考模式 |
+| /usage | 查看使用量统计 |
+
+## 快捷键
+
+- Enter: 发送消息
+- Shift+Enter: 换行
+- Ctrl/Cmd+K: 插入文件引用
+- Ctrl/Cmd+/: 显示命令菜单
+- ESC: 关闭弹窗
+
+## 功能特性
+
+- 与 Claude Code CLI 集成
+- 支持文件引用和代码搜索
+- 移动端 WebSocket 连接
+- 权限管理系统
+- 多对话管理
+`
+    if (currentConversationId) {
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === currentConversationId) {
+          const newMessage: Message = {
+            id: `assistant-${Date.now()}`,
+            role: 'assistant',
+            content: helpText,
+            timestamp: Date.now(),
+          }
+          return {
+            ...conv,
+            messages: [...conv.messages, newMessage],
+            updatedAt: Date.now(),
+          }
+        }
+        return conv
+      }))
+    }
+  }
+
+  // 清空当前对话
+  const handleClearConversation = () => {
+    if (currentConversationId) {
+      setConversations(prev => prev.map(conv => {
+        if (conv.id === currentConversationId) {
+          return {
+            ...conv,
+            messages: [],
+            updatedAt: Date.now(),
+          }
+        }
+        return conv
+      }))
+    }
+  }
+
+  // 附加文件到对话
+  const handleAttachFile = async () => {
+    try {
+      const result = await ipc.openFile()
+      if (result) {
+        // 将文件路径作为消息发送
+        const attachMessage = `@${result}`
+        setInputValue(attachMessage)
+        inputRef.current?.focus()
+      }
+    } catch (error) {
+      console.error('Failed to attach file:', error)
+    }
+  }
+
+  // 切换思考模式
+  const handleToggleThinking = () => {
+    // 思考模式可以通过在消息前添加特定标记来实现
+    // 这里简单地在输入框添加提示
+    const thinkingMessage = `<thinking>\n让我仔细思考这个问题...\n</thinking>\n\n`
+    setInputValue(thinkingMessage + inputValue)
+    inputRef.current?.focus()
+  }
+
+  // 处理文件上传
+  const handleFileUpload = async () => {
+    try {
+      const result = await ipc.selectFile()
+      if (result.success && result.filePath) {
+        // 获取文件名
+        const fileName = result.filePath.split('/').pop() || result.filePath.split('\\').pop() || 'unknown'
+
+        // 读取文件内容
+        const fs = await import('fs')
+        const content = fs.readFileSync(result.filePath, 'utf-8')
+
+        // 添加到附件列表
+        setAttachedFiles(prev => [...prev, {
+          name: fileName,
+          path: result.filePath!,
+          content
+        }])
+      }
+    } catch (error) {
+      console.error('Failed to upload file:', error)
+    }
+  }
+
+  // 移除附件
+  const handleRemoveAttachment = (index: number) => {
+    setAttachedFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const filteredConversations = conversations
+    .filter((conv) => conv.title.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => {
+      // 置顶的对话排在前面
+      if (a.isPinned && !b.isPinned) return -1
+      if (!a.isPinned && b.isPinned) return 1
+      // 同样置顶状态按更新时间排序
+      return b.updatedAt - a.updatedAt
+    })
+
+  // 判断是否为小屏幕
+  const isSmallScreen = windowSize.width < BREAKPOINTS.md
+
+  return (
+    <div className="h-full w-full flex bg-background/50 relative overflow-hidden">
+      {/* 背景装饰 */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
+        <div className="absolute top-20 left-10 w-48 h-48 bg-gradient-to-br from-blue-500/5 to-purple-500/5 rounded-full blur-3xl animate-float sm:top-40 sm:left-20 sm:w-64 sm:h-64" />
+        <div className="absolute bottom-20 right-10 w-60 h-60 bg-gradient-to-tr from-pink-500/5 to-orange-500/5 rounded-full blur-3xl animate-float-delayed sm:bottom-40 sm:right-20 sm:w-80 sm:h-80" />
+      </div>
+
+      {/* 移动端遮罩层 */}
+      {isSmallScreen && sidebarVisible && (
+        <div
+          className="fixed inset-0 bg-black/50 z-20 transition-opacity"
+          onClick={toggleSidebar}
+        />
+      )}
+
+      {/* 左侧边栏 - 响应式 */}
+      <div
+        className={`
+          relative z-30 flex flex-col border-r border-white/10 transition-all duration-300
+          ${isSmallScreen
+            ? `fixed top-0 left-0 bottom-0 w-72 bg-background/95 shadow-2xl ${sidebarVisible ? 'translate-x-0' : '-translate-x-full'}`
+            : sidebarCollapsed
+              ? 'w-16'
+              : 'w-80'
+          }
+        `}
+      >
+        {/* 侧边栏头部 */}
+        <div className={`p-4 border-b border-white/10 ${sidebarCollapsed && !isSmallScreen ? 'flex items-center justify-center' : ''}`}>
+          <div className={`flex items-center gap-3 ${sidebarCollapsed && !isSmallScreen ? '' : 'mb-2 sm:mb-3'}`}>
+            {(!sidebarCollapsed || isSmallScreen) && (
+              <div className="p-2 rounded-xl bg-black">
+                <Sparkles size={sidebarCollapsed && !isSmallScreen ? 16 : 20} className="text-white" />
+              </div>
+            )}
+            {(!sidebarCollapsed || isSmallScreen) && (
+              <div className={isSmallScreen ? 'block' : 'hidden lg:block'}>
+                <h2 className="font-semibold text-primary text-sm">Conversations</h2>
+                <p className="text-xs text-secondary">{conversations.length} conversations</p>
+              </div>
+            )}
+          </div>
+
+          {/* 折叠按钮（桌面端） */}
+          {!isSmallScreen && (
+            <button
+              onClick={toggleSidebarCollapse}
+              className={`absolute top-3 right-2 p-2 sm:p-2.5 transition-all glass-button ${
+                sidebarCollapsed
+                  ? 'rounded-full bg-white text-black hover:bg-gray-100'
+                  : 'rounded-lg hover:bg-white/20 text-secondary hover:text-primary'
+              }`}
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <ChevronLeft size={16} className={`transition-transform sm:size-18 ${sidebarCollapsed ? 'rotate-180' : ''}`} />
+            </button>
+          )}
+
+          {/* 关闭按钮（移动端） */}
+          {isSmallScreen && (
+            <button
+              onClick={toggleSidebar}
+              className="absolute top-4 right-4 p-2 rounded-lg hover:bg-white/20 text-secondary hover:text-primary transition-all"
+            >
+              <X size={20} />
+            </button>
+          )}
+
+          {/* 搜索框 */}
+          {(!sidebarCollapsed || isSmallScreen) && (
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full px-3 py-2 pl-9 glass-card border-0 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              />
+
+            </div>
+          )}
+        </div>
+
+        {/* 对话列表 */}
+        {(!sidebarCollapsed || isSmallScreen) && (
+          <div className="flex-1 overflow-y-auto p-1 sm:p-3 space-y-2">
+            {filteredConversations.map((conv) => (
+              <div
+                key={conv.id}
+                className={`relative group rounded-lg transition-all duration-300 ${
+                  conv.id === currentConversationId
+                    ? 'glass-card shadow-md'
+                    : 'hover:bg-white/30'
+                }`}
+              >
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setCurrentConversationId(conv.id)
+                      if (isSmallScreen) toggleSidebar() // 移动端选择后关闭侧边栏
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      console.log('Right-click on conversation:', conv.id)
+                      setContextMenuData({
+                        visible: true,
+                        position: { x: e.clientX, y: e.clientY },
+                        conversationId: conv.id
+                      })
+                      console.log('Context menu data set:', {
+                        visible: true,
+                        position: { x: e.clientX, y: e.clientY },
+                        conversationId: conv.id
+                      })
+                    }}
+                    className="w-full text-left p-2 sm:p-4 rounded-lg"
+                    title={sidebarCollapsed && !isSmallScreen ? conv.title : undefined}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <div className={`font-medium truncate flex-1 text-sm flex items-center gap-1.5 ${
+                        conv.id === currentConversationId
+                          ? 'text-transparent bg-gradient-to-r from-blue-500 to-purple-500 bg-clip-text'
+                          : 'text-primary group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-blue-500 group-hover:to-purple-500 group-hover:bg-clip-text'
+                      } transition-all`}>
+                        {conv.isPinned && <Pin size={12} className="text-purple-500 flex-shrink-0" />}
+                        {(!sidebarCollapsed || isSmallScreen) && conv.title}
+                      </div>
+                      {/* 呼吸灯：根据初始化状态显示不同颜色 */}
+                      {conv.id === currentConversationId && (
+                        <div className={`
+                          absolute top-3 right-3 sm:top-4 sm:right-4
+                          w-2 h-2 rounded-full animate-pulse flex-shrink-0
+                          ${conv.claudeStatus === 'initializing'
+                            ? 'bg-red-500'
+                            : conv.claudeStatus === 'ready'
+                              ? 'bg-green-500'
+                              : 'bg-gray-500'}
+                        `} />
+                      )}
+                    </div>
+                    {(!sidebarCollapsed || isSmallScreen) && (
+                      <div className="text-xs text-secondary/80">
+                        {conv.messages.length} {conv.messages.length === 1 ? 'msg' : 'msgs'}
+                      </div>
+                    )}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* New Conversation 按钮和返回首页按钮 */}
+        {(!sidebarCollapsed || isSmallScreen) && (
+          <div className="p-2 sm:p-4 border-t border-white/10 flex gap-2 sm:gap-3">
+            <button
+              onClick={() => {
+                handleNewConversation()
+                if (isSmallScreen) toggleSidebar()
+              }}
+              className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+              title="New Conversation"
+            >
+              <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300 sm:size-18 text-secondary hover:text-primary" />
+            </button>
+            <button
+              onClick={() => {
+                // 返回首页的逻辑
+                window.location.href = '/'
+              }}
+              className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+              title="Back to Home"
+            >
+              <Home size={16} className="transition-transform duration-300 sm:size-18 text-secondary hover:text-primary" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* 主内容区 */}
+      <div className="relative z-10 flex-1 flex flex-col min-w-0">
+        {/* 顶部栏 - 响应式 */}
+        <div className="h-14 sm:h-16 px-3 sm:px-6 border-b border-white/10 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+            {/* 汉堡菜单按钮（小屏幕） */}
+            {isSmallScreen && (
+              <button
+                onClick={toggleSidebar}
+                className="p-2 rounded-lg hover:bg-white/20 text-secondary hover:text-primary transition-all"
+                title="Toggle sidebar"
+              >
+                <Menu size={20} />
+              </button>
+            )}
+            <div className={`
+              w-2 h-2 rounded-full animate-pulse flex-shrink-0
+              ${currentConversation?.claudeStatus === 'initializing'
+                ? 'bg-red-500'
+                : currentConversation?.claudeStatus === 'ready'
+                  ? 'bg-green-500'
+                  : 'bg-gray-500'}
+            `} />
+            <span className="text-xs sm:text-sm text-secondary/80 font-mono truncate">
+              {projectPath}
+            </span>
+          </div>
+          <button
+            onClick={() => setGitPanelVisible(true)}
+            disabled={!projectPath}
+            className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Git Status"
+          >
+            <GitBranch size={16} className="sm:size-18" />
+          </button>
+          <button
+            onClick={() => setSearchPanelVisible(true)}
+            disabled={!projectPath}
+            className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Search Files"
+          >
+            <Search size={16} className="sm:size-18" />
+          </button>
+          <button
+            onClick={onOpenSettings}
+            className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all"
+            title="Settings"
+          >
+            <Settings size={16} className="sm:size-18" />
+          </button>
+        </div>
+
+        {/* 对话消息区域 - 响应式 */}
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+          {error && (
+            <Card className="p-3 sm:p-4 bg-red-500/10 border-red-500/20">
+              <div className="flex items-start gap-2 sm:gap-3">
+                <div className="p-1.5 sm:p-2 rounded-lg bg-red-500/20">
+                  <span className="text-red-500 text-xs sm:text-sm font-medium">Error</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm text-red-700 break-words">{error}</p>
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {currentConversation?.messages.length === 0 ? (
+            <div className="h-full flex items-center justify-center px-4">
+              <div className="text-center max-w-md">
+                <h3 className="text-xl sm:text-2xl font-semibold text-secondary mb-2 sm:mb-3">
+                  Start a new conversation
+                </h3>
+                <p className="text-sm sm:text-base text-secondary/70">
+                  Ask Claude Code anything about your project
+                </p>
+              </div>
+            </div>
+          ) : (
+            currentConversation?.messages.map((msg, index) => (
+              <div
+                key={msg.id}
+                className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                style={{
+                  animation: `fadeInUp 0.4s ease-out ${index * 50}ms both`,
+                }}
+              >
+                <Card
+                  className={`max-w-[85%] sm:max-w-2xl min-w-[120px] p-3 sm:p-5 break-words whitespace-pre-wrap ${
+                    msg.role === 'user'
+                      ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20'
+                      : 'glass-card'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                    <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                      msg.role === 'user'
+                        ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white'
+                        : 'bg-gradient-to-br from-gray-100 to-gray-200 text-primary'
+                    }`}>
+                      {msg.role === 'user' ? 'U' : 'C'}
+                    </div>
+                    <span className="text-xs sm:text-sm text-secondary font-medium">
+                      {msg.role === 'user' ? 'You' : 'Claude'}
+                    </span>
+                  </div>
+                  <MessageContent content={msg.content} />
+                </Card>
+              </div>
+            ))
+          )}
+
+          {isLoading && (
+            <div className="flex justify-start" style={{ animation: 'fadeInUp 0.4s ease-out both' }}>
+              <Card className="max-w-[85%] sm:max-w-2xl min-w-[120px] p-3 sm:p-5 glass-card break-words whitespace-pre-wrap">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center text-xs font-semibold text-primary animate-pulse">
+                    C
+                  </div>
+                  <div className="flex items-center gap-2 sm:gap-3 text-secondary">
+                    <Loader2 size={16} className="sm:size-18 animate-spin" />
+                    <span className="text-sm">Claude is thinking...</span>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+        </div>
+
+        {/* 底部输入框 - 响应式 */}
+        <div className="p-3 sm:p-6 border-t border-white/10">
+          <div className="max-w-4xl mx-auto" ref={inputContainerRef}>
+            {/* 文件预览区域 */}
+            {attachedFiles.length > 0 && (
+              <div className="mb-2 flex flex-wrap gap-2">
+                {attachedFiles.map((file, index) => (
+                  <div
+                    key={index}
+                    className="glass-card px-3 py-2 rounded-lg flex items-center gap-2 text-sm"
+                  >
+                    <Paperclip size={14} className="text-secondary flex-shrink-0" />
+                    <span className="text-primary truncate max-w-[200px]">{file.name}</span>
+                    <button
+                      onClick={() => handleRemoveAttachment(index)}
+                      className="text-secondary hover:text-red-500 transition-colors flex-shrink-0"
+                      title="Remove attachment"
+                    >
+                      <XCircle size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="glass-card p-2">
+              <textarea
+                ref={inputRef}
+                value={inputValue}
+                onChange={handleInputChange}
+                onKeyDown={(e) => {
+                  handleKeyDown(e)
+                  // 只有在非输入法状态下，按 Enter 才发送消息
+                  if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
+                    e.preventDefault()
+                    if (!isLoading && (inputValue.trim() || attachedFiles.length > 0)) {
+                      handleSendMessage()
+                    }
+                  }
+                }}
+                onCompositionStart={() => setIsComposing(true)}
+                onCompositionEnd={() => setIsComposing(false)}
+                placeholder={isLoading ? "Claude is thinking..." : "Ask Claude Code anything..."}
+                rows={2}
+                disabled={isLoading}
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-transparent border-0 text-sm sm:text-base text-primary placeholder:text-secondary/60 resize-none focus:outline-none min-h-[60px] sm:min-h-[80px]"
+              />
+
+              {/* 功能按钮栏 */}
+              <div className="flex items-center justify-between px-2 pb-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  {/* 文件附件按钮 */}
+                  <button
+                    onClick={handleFileUpload}
+                    disabled={isLoading}
+                    className="p-2 rounded-lg glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Attach file"
+                  >
+                    <Paperclip size={16} className="text-secondary hover:text-primary" />
+                  </button>
+
+                  {/* 模式选择器 */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setModeDropdownOpen(!modeDropdownOpen)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg glass-button hover:bg-white/20 transition-all text-xs sm:text-sm"
+                    >
+                      <span className="font-medium capitalize">{filterMode}</span>
+                      <ChevronDown size={14} className={`transition-transform ${modeDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {/* 下拉菜单 */}
+                    {modeDropdownOpen && (
+                      <div className="absolute bottom-full left-0 mb-2 glass-card rounded-lg shadow-xl overflow-hidden min-w-[140px] z-50">
+                        <button
+                          onClick={() => {
+                            setFilterMode('talk')
+                            setModeDropdownOpen(false)
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs sm:text-sm flex items-center gap-2 transition-colors ${
+                              filterMode === 'talk' ? 'bg-blue-500/20 text-blue-400' : 'hover:bg-white/10 text-primary'
+                            }`}
+                        >
+                          <span className="font-medium">Talk</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setFilterMode('develop')
+                            setModeDropdownOpen(false)
+                          }}
+                          className={`w-full px-3 py-2 text-left text-xs sm:text-sm flex items-center gap-2 transition-colors ${
+                              filterMode === 'develop' ? 'bg-purple-500/20 text-purple-400' : 'hover:bg-white/10 text-primary'
+                            }`}
+                        >
+                          <span className="font-medium">Develop</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleSendMessage}
+                  disabled={(!inputValue.trim() && attachedFiles.length === 0) || isLoading}
+                  className="p-2 sm:p-3 rounded-xl bg-black text-white hover:shadow-lg hover:shadow-black/25 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 transition-all"
+                  title="Send"
+                >
+                  {isLoading ? (
+                    <Loader2 size={16} className="sm:size-18 animate-spin" />
+                  ) : (
+                    <img src="/箭头上_arrow-up.svg" alt="Send" className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            {/* 底部提示 - 隐藏在小屏幕 */}
+            <div className="hidden sm:flex items-center justify-between mt-3 text-sm text-secondary/60">
+              <div className="flex gap-4">
+                <button
+                  onClick={() => showMenuAtPosition('file')}
+                  className="hover:text-primary transition-colors"
+                >
+                  # Reference code
+                </button>
+                <button
+                  onClick={() => showMenuAtPosition('command')}
+                  className="hover:text-primary transition-colors"
+                >
+                  / Commands
+                </button>
+              </div>
+              <button
+                onClick={onOpenSettings}
+                className="hover:text-primary transition-colors"
+              >
+                Link phone
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* 菜单弹窗 */}
+        {showMenu && (
+          <div
+            ref={menuRef}
+            className="fixed bottom-32 left-1/2 -translate-x-1/2 glass-card p-3 min-w-72 z-50"
+            style={{
+              animation: 'fadeInUp 0.3s ease-out both',
+            }}
+          >
+            <div className="text-xs text-secondary px-3 py-2 uppercase tracking-wider font-semibold">
+              Commands
+            </div>
+            <div className="space-y-1">
+              <button className="w-full px-4 py-3 text-left text-sm text-primary hover:bg-white/20 rounded-xl transition-all flex items-center gap-3">
+                <span className="text-lg">💡</span>
+                <span>/help - Show help</span>
+              </button>
+              <button className="w-full px-4 py-3 text-left text-sm text-primary hover:bg-white/20 rounded-xl transition-all flex items-center gap-3">
+                <span className="text-lg">🧹</span>
+                <span>/clear - Clear conversation</span>
+              </button>
+              <button className="w-full px-4 py-3 text-left text-sm text-primary hover:bg-white/20 rounded-xl transition-all flex items-center gap-3">
+                <span className="text-lg">⚙️</span>
+                <span>/settings - Open settings</span>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 上下文引用弹窗 */}
+        {showContext && (
+          <div
+            ref={menuRef}
+            className="fixed bottom-32 right-8 glass-card p-5 min-w-96 z-50"
+            style={{
+              animation: 'fadeInUp 0.3s ease-out both',
+            }}
+          >
+            <div className="text-xs text-secondary px-3 py-2 uppercase tracking-wider font-semibold mb-3">
+              Reference Code
+            </div>
+            <p className="text-sm text-secondary px-3 mb-4">
+              Select files to reference in your conversation...
+            </p>
+            <div className="space-y-2">
+              <button className="w-full px-4 py-3 text-left text-sm text-primary hover:bg-white/20 rounded-xl transition-all flex items-center gap-3">
+                <span className="text-lg">📁</span>
+                <span>Browse files...</span>
+              </button>
+              <button className="w-full px-4 py-3 text-left text-sm text-primary hover:bg-white/20 rounded-xl transition-all flex items-center gap-3">
+                <span className="text-lg">🔍</span>
+                <span>Search symbols...</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 文件引用菜单 */}
+      <FileReferenceMenu
+        isVisible={fileMenuVisible}
+        position={menuPosition}
+        onSelect={handleFileSelect}
+        onClose={() => setFileMenuVisible(false)}
+        projectPath={projectPath}
+      />
+
+      {/* 命令菜单 */}
+      <CommandMenu
+        isVisible={commandMenuVisible}
+        position={menuPosition}
+        onSelect={handleCommandSelect}
+        onClose={() => setCommandMenuVisible(false)}
+      />
+
+      {/* 信任文件夹请求弹窗 */}
+      {trustRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="glass-card rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-fadeIn">
+            <h3 className="text-lg font-semibold text-primary mb-4">Trust this folder?</h3>
+            <p className="text-sm text-secondary mb-6">
+              Claude Code may read, write, or execute files contained in this directory.
+              This can pose security risks, so only use files and bash commands from trusted sources.
+            </p>
+            <p className="text-xs text-secondary/70 mb-4 font-mono">{trustRequest.projectPath}</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => handleTrustResponse(false)}
+                className="flex-1 px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Don't Trust
+              </button>
+              <button
+                onClick={() => handleTrustResponse(true)}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 text-white text-sm font-medium shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all"
+              >
+                Trust
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 权限请求弹窗 */}
+      {permissionRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="glass-card rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-fadeIn">
+            <h3 className="text-lg font-semibold text-primary mb-2">Permission Required</h3>
+            <p className="text-sm text-secondary mb-2">{permissionRequest.toolName}</p>
+            <p className="text-xs text-secondary/70 mb-6 font-mono">{permissionRequest.details}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handlePermissionResponse('yes')}
+                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Allow Once
+              </button>
+              <button
+                onClick={() => handlePermissionResponse('yesAlways')}
+                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Allow Always
+              </button>
+              <button
+                onClick={() => handlePermissionResponse('no')}
+                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Deny Once
+              </button>
+              <button
+                onClick={() => handlePermissionResponse('noAlways')}
+                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Deny Always
+              </button>
+            </div>
+            <div className="mt-3">
+              <button
+                onClick={() => handlePermissionResponse('exit')}
+                className="w-full px-4 py-2.5 rounded-xl bg-red-500/20 text-red-500 text-sm font-medium hover:bg-red-500/30 transition-colors"
+              >
+                Exit Conversation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 模型设置弹窗 */}
+      {showModelSettings && (
+        <ModelSettings onClose={() => setShowModelSettings(false)} />
+      )}
+
+      {/* Git 状态面板 */}
+      <GitStatusPanel
+        projectPath={projectPath}
+        visible={gitPanelVisible}
+        onClose={() => setGitPanelVisible(false)}
+      />
+
+      {/* 文件搜索面板 */}
+      <FileSearchPanel
+        projectPath={projectPath}
+        visible={searchPanelVisible}
+        onClose={() => setSearchPanelVisible(false)}
+        onInsertReference={(filePath, line) => {
+          const reference = line ? `@${filePath}:${line}` : `@${filePath}`
+          setInputValue(prev => prev + reference)
+          inputRef.current?.focus()
+        }}
+      />
+
+      {/* 重命名弹窗 */}
+      {renameDialog.visible && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={handleCancelRename}
+        >
+          <div
+            className="glass-card rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-primary mb-4">Rename Conversation</h3>
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSaveRename()
+                } else if (e.key === 'Escape') {
+                  handleCancelRename()
+                }
+              }}
+              className="w-full px-4 py-3 glass-card border-0 text-primary placeholder:text-secondary/60 focus:ring-2 focus:ring-blue-500/20 mb-4"
+              placeholder="Enter new title..."
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelRename}
+                className="flex-1 px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveRename}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 text-white text-sm font-medium shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 transition-all"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      <style>{`
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+
+      {/* 上下文菜单 */}
+      {contextMenuData.visible && (
+        <div
+          onClick={() => setContextMenuData(prev => ({ ...prev, visible: false }))}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+          }}
+        >
+          {/* 菜单容器 - 停止事件冒泡，防止触发外层的关闭 */}
+          <div
+            id="context-menu"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+            }}
+            style={{
+              position: 'fixed',
+              left: contextMenuData.position.x,
+              top: contextMenuData.position.y,
+              backgroundColor: 'rgba(17, 24, 39, 0.9)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.1)',
+              borderRadius: '8px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+              width: '200px',
+              animation: 'fadeInUp 0.2s ease-out both'
+            }}
+          >
+            <button
+              onClick={() => {
+                handleDeleteConversation(contextMenuData.conversationId)
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px 16px',
+                textAlign: 'left' as const,
+                fontSize: '14px',
+                color: '#f87171',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+              }}
+            >
+              Delete Conversation
+            </button>
+            <button
+              onClick={() => {
+                handlePinConversation(contextMenuData.conversationId)
+              }}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px 16px',
+                textAlign: 'left' as const,
+                fontSize: '14px',
+                color: '#e5e7eb',
+                backgroundColor: 'transparent',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent'
+              }}
+            >
+              {conversations.find(c => c.id === contextMenuData.conversationId)?.isPinned ? 'Unpin Conversation' : 'Pin Conversation'}
+            </button>
+            <button
+              onClick={() => {
+                handleRenameConversation(contextMenuData.conversationId)
+              }}
+            style={{
+              display: 'block',
+              width: '100%',
+              padding: '8px 16px',
+              textAlign: 'left' as const,
+              fontSize: '14px',
+              color: '#e5e7eb',
+              backgroundColor: 'transparent',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer'
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = 'transparent'
+            }}
+          >
+            Rename Conversation
+          </button>
+        </div>
+        </div>
+      )}
+    </div>
+  )
+}

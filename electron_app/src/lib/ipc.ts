@@ -1,0 +1,430 @@
+import type { ElectronAPI, Message, PermissionRequest, PermissionRule, Conversation } from '../types'
+
+/**
+ * Electron IPC 通信封装
+ */
+export const ipc: ElectronAPI = {
+  /**
+   * 打开文件夹选择器
+   * @returns 选中的文件夹路径，取消时返回 null
+   */
+  openFolder: async () => {
+    if (window.electronAPI?.openFolder) {
+      return window.electronAPI.openFolder()
+    }
+    console.warn('electronAPI not available, running in mock mode')
+    return null
+  },
+
+  /**
+   * 打开文件选择器
+   * @returns 选中的文件路径，取消时返回 null
+   */
+  openFile: async () => {
+    if (window.electronAPI?.openFile) {
+      return window.electronAPI.openFile()
+    }
+    console.warn('electronAPI not available, running in mock mode')
+    return null
+  },
+
+  /**
+   * 选择文件（用于文件附件功能）
+   * @returns 选择结果，包含 success 和 filePath
+   */
+  selectFile: async () => {
+    if (window.electronAPI?.selectFile) {
+      return window.electronAPI.selectFile()
+    }
+    console.warn('electronAPI not available, running in mock mode')
+    return { success: false }
+  },
+
+  /**
+   * 发送消息给 Claude Code
+   * @param conversationId 对话 ID
+   * @param projectPath 项目路径
+   * @param message 用户消息
+   * @param filterMode 过滤模式
+   * @returns 消息 ID
+   */
+  claudeSend: async (conversationId: string, projectPath: string, message: string, filterMode?: 'talk' | 'develop') => {
+    if (window.electronAPI?.claudeSend) {
+      return window.electronAPI.claudeSend(conversationId, projectPath, message, filterMode)
+    }
+    console.warn('electronAPI not available, running in mock mode')
+    return { messageId: `mock-${Date.now()}` }
+  },
+
+  /**
+   * 监听 Claude 流式输出
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onClaudeStream: (callback: (data: { conversationId: string; messageId: string; type: string; content: string; toolName?: string; toolInput?: string; timestamp: number }) => void) => {
+    if (window.electronAPI?.onClaudeStream) {
+      const cleanupId = window.electronAPI.onClaudeStream(callback)
+      return cleanupId
+    }
+    console.warn('electronAPI.onClaudeStream not available, running in mock mode')
+    // 在模拟模式下，我们不设置实际的监听器，因为没有后端
+    return ''
+  },
+
+  /**
+   * 设置连接密码
+   * @param password 连接密码
+   */
+  setLinkPassword: async (password: string) => {
+    if (window.electronAPI?.setLinkPassword) {
+      return window.electronAPI.setLinkPassword(password)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, port: 3000 }
+  },
+
+  /**
+   * 获取连接信息
+   */
+  getConnectionInfo: async () => {
+    if (window.electronAPI?.getConnectionInfo) {
+      return window.electronAPI.getConnectionInfo()
+    }
+    console.warn('electronAPI not available')
+    return { ip: '192.168.1.100', port: 3000, hasPassword: false }
+  },
+
+  /**
+   * 设置当前项目路径
+   * @param projectPath 项目路径
+   */
+  setProjectPath: async (projectPath: string) => {
+    if (window.electronAPI?.setProjectPath) {
+      return window.electronAPI.setProjectPath(projectPath)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 更新聊天历史
+   * @param messages 消息列表
+   */
+  updateChatHistory: async (messages: Message[]) => {
+    if (window.electronAPI?.updateChatHistory) {
+      return window.electronAPI.updateChatHistory(messages)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 添加单条消息
+   * @param message 消息对象
+   */
+  addChatMessage: async (message: Message) => {
+    if (window.electronAPI?.addChatMessage) {
+      return window.electronAPI.addChatMessage(message)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 请求权限
+   * @param request 权限请求对象
+   */
+  requestPermission: async (request: PermissionRequest) => {
+    if (window.electronAPI?.requestPermission) {
+      return window.electronAPI.requestPermission(request)
+    }
+    console.warn('electronAPI not available')
+    return {
+      requestId: request.id,
+      choice: 'no',
+      timestamp: Date.now(),
+      source: 'desktop',
+    }
+  },
+
+  /**
+   * 获取权限规则列表
+   */
+  getPermissionRules: async () => {
+    if (window.electronAPI?.getPermissionRules) {
+      return window.electronAPI.getPermissionRules()
+    }
+    console.warn('electronAPI not available')
+    return []
+  },
+
+  /**
+   * 添加权限规则
+   * @param rule 权限规则对象
+   */
+  addPermissionRule: async (rule: PermissionRule) => {
+    if (window.electronAPI?.addPermissionRule) {
+      return window.electronAPI.addPermissionRule(rule)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 清除权限规则
+   */
+  clearPermissionRules: async () => {
+    if (window.electronAPI?.clearPermissionRules) {
+      return window.electronAPI.clearPermissionRules()
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 获取已安装的 Skills
+   */
+  getSkills: async () => {
+    if (window.electronAPI?.getSkills) {
+      return window.electronAPI.getSkills()
+    }
+    console.warn('electronAPI not available')
+    return { success: false, skills: [] }
+  },
+
+  /**
+   * 获取 MCP 服务器配置
+   */
+  getMCPServers: async () => {
+    if (window.electronAPI?.getMCPServers) {
+      return window.electronAPI.getMCPServers()
+    }
+    console.warn('electronAPI not available')
+    return { success: false, servers: [] }
+  },
+
+  /**
+   * 切换模型
+   * @param modelId 模型 ID
+   */
+  switchModel: async (modelId: string) => {
+    if (window.electronAPI?.switchModel) {
+      return window.electronAPI.switchModel(modelId)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 获取 Git 状态
+   * @param projectPath 项目路径
+   */
+  getGitStatus: async (projectPath: string) => {
+    if (window.electronAPI?.getGitStatus) {
+      return window.electronAPI.getGitStatus(projectPath)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 搜索文件内容
+   * @param projectPath 项目路径
+   * @param query 搜索查询
+   */
+  searchFiles: async (projectPath: string, query: string) => {
+    if (window.electronAPI?.searchFiles) {
+      return window.electronAPI.searchFiles(projectPath, query)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 读取项目的对话记录
+   * @param projectPath 项目路径
+   */
+  readProjectConversations: async (projectPath: string) => {
+    if (window.electronAPI?.readProjectConversations) {
+      return window.electronAPI.readProjectConversations(projectPath)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 保存项目的对话记录
+   * @param projectPath 项目路径
+   * @param conversations 对话记录数组
+   */
+  saveProjectConversations: async (projectPath: string, conversations: Conversation[]) => {
+    if (window.electronAPI?.saveProjectConversations) {
+      return window.electronAPI.saveProjectConversations(projectPath, conversations)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 删除项目的对话记录
+   * @param projectPath 项目路径
+   * @param conversationId 对话 ID
+   */
+  deleteProjectConversation: async (projectPath: string, conversationId: string) => {
+    if (window.electronAPI?.deleteProjectConversation) {
+      return window.electronAPI.deleteProjectConversation(projectPath, conversationId)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 响应信任文件夹请求
+   * @param conversationId 对话 ID
+   * @param trust 是否信任
+   */
+  respondTrust: async (conversationId: string, trust: boolean) => {
+    if (window.electronAPI?.respondTrust) {
+      return window.electronAPI.respondTrust(conversationId, trust)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 响应权限请求
+   * @param conversationId 对话 ID
+   * @param choice 选择 (yes, no, yesAlways, noAlways, exit)
+   */
+  respondPermission: async (conversationId: string, choice: string) => {
+    if (window.electronAPI?.respondPermission) {
+      return window.electronAPI.respondPermission(conversationId, choice)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 清理对话会话
+   * @param conversationId 对话 ID
+   */
+  cleanupConversation: async (conversationId: string) => {
+    if (window.electronAPI?.cleanupConversation) {
+      return window.electronAPI.cleanupConversation(conversationId)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 初始化 Claude 会话
+   * @param conversationId 对话 ID
+   * @param projectPath 项目路径
+   */
+  initializeClaude: async (conversationId: string, projectPath: string) => {
+    if (window.electronAPI?.initializeClaude) {
+      return window.electronAPI.initializeClaude(conversationId, projectPath)
+    }
+    console.warn('electronAPI not available')
+    return { success: false }
+  },
+
+  /**
+   * 监听信任文件夹请求
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onTrustRequest: (callback: (data: { conversationId: string; projectPath: string; message: string }) => void) => {
+    if (window.electronAPI?.onTrustRequest) {
+      return window.electronAPI.onTrustRequest(callback)
+    }
+    console.warn('electronAPI.onTrustRequest not available')
+    return ''
+  },
+
+  /**
+   * 监听权限请求
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onPermissionRequest: (callback: (data: { conversationId: string; projectPath: string; toolName: string; details: string }) => void) => {
+    if (window.electronAPI?.onPermissionRequest) {
+      return window.electronAPI.onPermissionRequest(callback)
+    }
+    console.warn('electronAPI.onPermissionRequest not available')
+    return ''
+  },
+
+  /**
+   * 监听 Claude 初始化状态变化
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onClaudeStatusChange: (callback: (data: { conversationId: string; status: 'not_started' | 'initializing' | 'ready' }) => void) => {
+    if (window.electronAPI?.onClaudeStatusChange) {
+      return window.electronAPI.onClaudeStatusChange(callback)
+    }
+    console.warn('electronAPI.onClaudeStatusChange not available')
+    return ''
+  },
+
+  /**
+   * 读取目录
+   * @param dirPath 目录路径
+   */
+  readDirectory: async (dirPath: string) => {
+    if (window.electronAPI?.readDirectory) {
+      return window.electronAPI.readDirectory(dirPath)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 读取 Claude 配置
+   */
+  readClaudeConfig: async () => {
+    if (window.electronAPI?.readClaudeConfig) {
+      return window.electronAPI.readClaudeConfig()
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 获取 API 用量
+   */
+  getAPIUsage: async () => {
+    if (window.electronAPI?.getAPIUsage) {
+      return window.electronAPI.getAPIUsage()
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
+   * 获取 conversation 列表（用于移动端同步）
+   */
+  getConversationList: async () => {
+    if (window.electronAPI?.getConversationList) {
+      return window.electronAPI.getConversationList()
+    }
+    console.warn('electronAPI.getConversationList not available')
+    return { success: false, conversations: [] }
+  },
+
+  /**
+   * 移除监听器
+   * @param cleanupId 清理 ID
+   */
+  removeListener: (cleanupId: string) => {
+    if (window.electronAPI?.removeListener) {
+      window.electronAPI.removeListener(cleanupId)
+    }
+  },
+
+  /**
+   * 平台信息
+   */
+  platform: typeof window !== 'undefined' ? (window.electronAPI?.platform || 'unknown') : 'unknown',
+}
