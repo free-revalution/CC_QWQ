@@ -53,27 +53,17 @@ npx expo start
 - **移动端**: Expo + React Native + WebSocket
 - **通信方式**: 桌面端 WebSocket 服务器，移动端客户端
 
-详见[架构文档](docs/)。
-
 ## 🗺️ 开发路线
 
-- [x] 桌面应用架构设计
-- [x] 移动应用架构设计
 - [ ] Claude Code CLI 集成
 - [ ] WebSocket 通信层
 - [ ] 二维码认证
-- [ ] UI 实现
+- [ ] UI 优化和改进
 - [ ] 发布构建
 
 ## 🤝 贡献
 
 我们欢迎贡献！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详情。
-
-## 📖 文档
-
-- [桌面端架构设计](docs/plans/2026-01-31-desktop-architecture-design.md)
-- [移动端架构设计](docs/plans/2026-01-31-mobile-architecture-design.md)
-- [开源策略](docs/plans/2026-02-08-open-source-design.md)
 
 ## 📄 开源协议
 

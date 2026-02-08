@@ -53,27 +53,17 @@ Scan the QR code with Expo Go app on your mobile device.
 - **Mobile**: Expo + React Native + WebSocket
 - **Communication**: WebSocket server on desktop, client on mobile
 
-See [Architecture Docs](docs/) for detailed design.
-
 ## 🗺️ Roadmap
 
-- [x] Desktop app architecture design
-- [x] Mobile app architecture design
 - [ ] Claude Code CLI integration
 - [ ] WebSocket communication layer
 - [ ] QR code authentication
-- [ ] UI implementation
+- [ ] UI polish and improvements
 - [ ] Release builds
 
 ## 🤝 Contributing
 
 We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
-
-## 📖 Documentation
-
-- [Desktop Architecture Design](docs/plans/2026-01-31-desktop-architecture-design.md)
-- [Mobile Architecture Design](docs/plans/2026-01-31-mobile-architecture-design.md)
-- [Open Source Strategy](docs/plans/2026-02-08-open-source-design.md)
 
 ## 📄 License
 
