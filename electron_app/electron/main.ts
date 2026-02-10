@@ -5,6 +5,7 @@ import * as url from 'node:url'
 import pkg from 'node-pty'
 import type { IPty } from 'node-pty'
 import { OperationLogger } from './operationLogger.js'
+import { ApprovalEngine } from './approvalEngine.js'
 import type { LogFilter } from '../src/types/operation.js'
 
 const { spawn: spawnPty } = pkg
@@ -806,6 +807,9 @@ const PORT = 3000
 
 // 操作日志系统
 export const operationLogger = new OperationLogger()
+
+// 审批引擎
+export const approvalEngine = new ApprovalEngine()
 
 // WebSocket 服务器实例
 let wss: WebSocketServer | null = null
@@ -2989,6 +2993,45 @@ ipcMain.handle('export-logs', async (_event, format: 'json' | 'text' = 'json') =
     return operationLogger.export(format)
   } catch (error) {
     console.error('[IPC] export-logs error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// ==================== 审批引擎 IPC ====================
+
+// 处理用户审批响应
+ipcMain.on('approval-response', (event, data) => {
+  console.log('[IPC] approval-response:', data)
+  approvalEngine.handleUserResponse(
+    data.requestId,
+    data.choice,
+    data.remember
+  )
+})
+
+// 获取用户偏好
+ipcMain.handle('get-approval-preferences', async () => {
+  return approvalEngine.getPreferences()
+})
+
+// 更新用户偏好
+ipcMain.handle('update-approval-preferences', async (_event, preferences) => {
+  try {
+    approvalEngine.updatePreferences(preferences)
+    return { success: true }
+  } catch (error) {
+    console.error('[IPC] update-approval-preferences error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 清除记住的选择
+ipcMain.handle('clear-remembered-choices', async () => {
+  try {
+    approvalEngine.clearRememberedChoices()
+    return { success: true }
+  } catch (error) {
+    console.error('[IPC] clear-remembered-choices error:', error)
     return { success: false, error: (error as Error).message }
   }
 })
