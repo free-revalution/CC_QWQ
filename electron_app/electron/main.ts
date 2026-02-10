@@ -4,10 +4,73 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import pkg from 'node-pty'
 import type { IPty } from 'node-pty'
+import { OperationLogger } from './operationLogger.js'
+import type { LogFilter } from '../src/types/operation.js'
 
 const { spawn: spawnPty } = pkg
 
 const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+
+// ==================== Happy 架构改进 - 类型定义 ====================
+
+/**
+ * 工具调用状态
+ */
+type ToolCallState = 'running' | 'completed' | 'error' | 'pending'
+
+/**
+ * 工具调用接口
+ */
+interface ToolCall {
+  name: string
+  state: ToolCallState
+  input: any
+  createdAt: number
+  startedAt: number | null
+  completedAt: number | null
+  description: string | null
+  result?: any
+  permission?: ToolPermission
+}
+
+/**
+ * 权限决策信息
+ */
+interface ToolPermission {
+  id: string
+  status: 'pending' | 'approved' | 'denied' | 'canceled'
+  reason?: string
+  mode?: string
+  allowedTools?: string[]
+  decision?: 'approved' | 'approved_for_session' | 'denied' | 'abort'
+  date?: number
+}
+
+/**
+ * 会话状态
+ */
+interface SessionState {
+  sessionId: string
+  claudeStatus: 'not_started' | 'initializing' | 'ready'
+  controlledByUser: boolean
+  activeToolCalls: Map<string, ToolCall>
+  lastActivity: number
+  thinking: boolean
+  thinkingAt: number
+  activeAt: number
+}
+
+/**
+ * 活动状态更新
+ */
+interface ActivityUpdate {
+  type: 'activity'
+  sessionId: string
+  active: boolean
+  activeAt: number
+  thinking?: boolean
+  thinkingAt?: number
+}
 
 // ==================== 工具函数 ====================
 
@@ -622,6 +685,10 @@ function resetTimeoutTimer(session: ClaudeSession, conversationId: string): void
             session.hasReceivedRealContent = false
             activeMessageId.delete(conversationId)
 
+            // ==================== Happy 架构改进 - 超时，清除思考状态 ====================
+            sessionStateManager.setThinking(conversationId, false)
+            sessionStateManager.setClaudeStatus(conversationId, 'ready')
+
             // session 状态变化时广播给移动端
             scheduleBroadcastConversationList()
           }, 3000)
@@ -737,6 +804,9 @@ const mobileClients = new Set<WebSocketClient>() // 存储所有连接的移动�
 let chatHistory: ChatMessage[] = [] // 存储聊天历史（用于同步给移动端）
 const PORT = 3000
 
+// 操作日志系统
+export const operationLogger = new OperationLogger()
+
 // WebSocket 服务器实例
 let wss: WebSocketServer | null = null
 
@@ -748,6 +818,176 @@ const activeMessageId = new Map<string, string>() // conversationId -> messageId
 
 // 反向查找：对话 ID -> 项目路径（用于清理和调试）
 const conversationProjectMap = new Map<string, string>()
+
+// ==================== Happy 架构改进 - 状态管理器 ====================
+
+/**
+ * 活动状态累积器
+ * 将短时间内的多次状态更新合并为一次批量发送
+ */
+class ActivityAccumulator {
+  private updates: Map<string, ActivityUpdate> = new Map()
+  private timer: NodeJS.Timeout | null = null
+  private flushInterval: number
+  private flushCallback: (updates: ActivityUpdate[]) => void
+
+  constructor(flushCallback: (updates: ActivityUpdate[]) => void, flushInterval: number = 2000) {
+    this.flushCallback = flushCallback
+    this.flushInterval = flushInterval
+  }
+
+  addUpdate(sessionId: string, update: Partial<ActivityUpdate>): void {
+    const existing = this.updates.get(sessionId)
+    const now = Date.now()
+
+    this.updates.set(sessionId, {
+      type: 'activity',
+      sessionId,
+      active: update.active ?? existing?.active ?? true,
+      activeAt: now,
+      thinking: update.thinking,
+      thinkingAt: update.thinkingAt ? now : existing?.thinkingAt
+    })
+
+    // 重置计时器
+    if (this.timer) {
+      clearTimeout(this.timer)
+    }
+    this.timer = setTimeout(() => this.flush(), this.flushInterval)
+  }
+
+  private flush(): void {
+    if (this.updates.size === 0) return
+
+    const updates = Array.from(this.updates.values())
+    this.updates.clear()
+
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+
+    this.flushCallback(updates)
+  }
+
+  flushNow(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.flush()
+  }
+
+  clear(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
+    this.updates.clear()
+  }
+}
+
+/**
+ * 会话状态管理器
+ */
+class SessionStateManager {
+  private states: Map<string, SessionState> = new Map()
+  private activityAccumulator: ActivityAccumulator
+
+  constructor(mobileClients: Set<WebSocketClient>) {
+    this.activityAccumulator = new ActivityAccumulator(
+      (updates) => this.broadcastActivityUpdates(updates),
+      2000
+    )
+  }
+
+  getOrCreate(sessionId: string): SessionState {
+    if (!this.states.has(sessionId)) {
+      this.states.set(sessionId, {
+        sessionId,
+        claudeStatus: 'not_started',
+        controlledByUser: true,
+        activeToolCalls: new Map(),
+        lastActivity: Date.now(),
+        thinking: false,
+        thinkingAt: 0,
+        activeAt: Date.now()
+      })
+    }
+    return this.states.get(sessionId)!
+  }
+
+  get(sessionId: string): SessionState | undefined {
+    return this.states.get(sessionId)
+  }
+
+  update(sessionId: string, updates: Partial<SessionState>): void {
+    const state = this.getOrCreate(sessionId)
+    Object.assign(state, updates)
+
+    if (updates.claudeStatus || updates.thinking !== undefined) {
+      state.activeAt = Date.now()
+    }
+
+    this.activityAccumulator.addUpdate(sessionId, {
+      active: true,
+      activeAt: state.activeAt,
+      thinking: state.thinking,
+      thinkingAt: state.thinking > 0 ? state.thinkingAt : undefined
+    })
+  }
+
+  setThinking(sessionId: string, thinking: boolean): void {
+    const state = this.getOrCreate(sessionId)
+    state.thinking = thinking
+    state.thinkingAt = thinking ? Date.now() : 0
+    state.activeAt = Date.now()
+
+    this.activityAccumulator.addUpdate(sessionId, {
+      active: true,
+      activeAt: state.activeAt,
+      thinking,
+      thinkingAt: thinking ? state.thinkingAt : undefined
+    })
+  }
+
+  setClaudeStatus(sessionId: string, status: 'not_started' | 'initializing' | 'ready'): void {
+    this.update(sessionId, { claudeStatus: status })
+  }
+
+  private broadcastActivityUpdates(updates: ActivityUpdate[]): void {
+    // 发送给移动端 WebSocket 客户端
+    mobileClients.forEach(client => {
+      if (client.readyState === 1) {  // WebSocket.OPEN
+        updates.forEach(update => {
+          try {
+            client.send(JSON.stringify(update))
+          } catch (error) {
+            console.error('[SessionStateManager] Failed to send activity update:', error)
+          }
+        })
+      }
+    })
+
+    // 发送给桌面端渲染进程
+    if (mainWindow && mainWindow.webContents) {
+      updates.forEach(update => {
+        mainWindow.webContents.send('activity-update', update)
+      })
+    }
+  }
+
+  flushActivityUpdates(): void {
+    this.activityAccumulator.flushNow()
+  }
+
+  remove(sessionId: string): void {
+    this.states.delete(sessionId)
+  }
+}
+
+// 创建会话状态管理器实例
+const sessionStateManager = new SessionStateManager(mobileClients)
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -860,13 +1100,10 @@ async function startWebSocketServer() {
       wss = null
     }
 
-    // 动态导入 ws 模块
-    const wsModule = await import('ws')
-    
-    // 创建 WebSocket 服务器
-    // 注意：这里使用类型断言来避免 TypeScript 类型错误
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const WebSocketServer = (wsModule as any).Server || (wsModule as any).default?.Server || wsModule
+    // 使用 createRequire 加载 CommonJS 版本的 ws
+    const { createRequire } = await import('module')
+    const require = createRequire(import.meta.url)
+    const WebSocketServer = require('ws').Server
     wss = new WebSocketServer({ port: PORT })
 
     // 处理连接事件
@@ -1246,6 +1483,9 @@ function setupPTYDataHandler(session: ClaudeSession, conversationId: string): vo
         session.buffer = ''
         console.log('[Claude] Session is now ready for user input, conversationId:', conversationId)
 
+        // ==================== Happy 架构改进 - 初始化完成 ====================
+        sessionStateManager.setClaudeStatus(conversationId, 'ready')
+
         // session 状态变化时广播给移动端
         scheduleBroadcastConversationList()
 
@@ -1408,6 +1648,10 @@ function setupPTYDataHandler(session: ClaudeSession, conversationId: string): vo
       }
       activeMessageId.delete(conversationId)
 
+      // ==================== Happy 架构改进 - 响应完成，清除思考状态 ====================
+      sessionStateManager.setThinking(conversationId, false)
+      sessionStateManager.setClaudeStatus(conversationId, 'ready')
+
       // session 状态变化时广播给移动端
       scheduleBroadcastConversationList()
 
@@ -1468,6 +1712,12 @@ async function executeClaudeRequest(conversationId: string, projectPath: string,
   console.log('[Claude] Generated messageId:', messageId)
   console.log('[Claude] Filter mode:', filterMode || 'develop')
 
+  // ==================== Happy 架构改进 - 状态更新 ====================
+  // 设置思考状态为 true
+  sessionStateManager.setThinking(conversationId, true)
+  // 设置 Claude 状态为 initializing
+  sessionStateManager.setClaudeStatus(conversationId, 'initializing')
+
   // 获取或创建 PTY 会话（每个对话独立的会话）
   const session = getOrCreateClaudeSession(conversationId, projectPath)
   const { terminal } = session
@@ -1495,6 +1745,8 @@ async function executeClaudeRequest(conversationId: string, projectPath: string,
         }, 200)
       })
       console.log('[Claude] Initialization complete')
+      // 初始化完成，设置状态为 ready
+      sessionStateManager.setClaudeStatus(conversationId, 'ready')
     } catch {
       console.error('[Claude] Initialization timeout, forcing ready state')
       // 超时后强制设置为已初始化
@@ -1503,7 +1755,13 @@ async function executeClaudeRequest(conversationId: string, projectPath: string,
 
       // session 状态变化时广播给移动端
       scheduleBroadcastConversationList()
+
+      // 超时也设置状态为 ready
+      sessionStateManager.setClaudeStatus(conversationId, 'ready')
     }
+  } else {
+    // 已经初始化，设置状态为 ready
+    sessionStateManager.setClaudeStatus(conversationId, 'ready')
   }
 
   // 设置会话状态和消息 ID
@@ -1544,6 +1802,10 @@ async function executeClaudeRequest(conversationId: string, projectPath: string,
   } catch (error) {
     console.error('[Claude] Failed to send message:', error)
     session.state = 'ready'
+
+    // ==================== Happy 架构改进 - 清除思考状态 ====================
+    sessionStateManager.setThinking(conversationId, false)
+    sessionStateManager.setClaudeStatus(conversationId, 'ready')
 
     // session 状态变化时广播给移动端
     scheduleBroadcastConversationList()
@@ -1742,6 +2004,54 @@ ipcMain.handle('get-conversation-list', async () => {
     return { success: true, conversations }
   } catch (error) {
     console.error('[Conversation List] Error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 处理文件内容
+function handleFileContent(filePath: string): string {
+  const fs = require('fs')
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown'
+
+  try {
+    // 代码文件：直接读取内容
+    const codeExtensions = ['js', 'ts', 'tsx', 'jsx', 'py', 'java', 'cpp', 'c', 'h', 'go', 'rs', 'txt', 'md', 'json', 'yaml', 'yml', 'toml', 'xml', 'csv', 'css', 'html', 'vue', 'rb', 'php', 'swift', 'kt', 'scala', 'cs', 'vb']
+    if (codeExtensions.includes(ext || '')) {
+      const content = fs.readFileSync(filePath, 'utf-8')
+      return `[文件: ${fileName}]\n\n\`\`\`${ext || 'text'}\n${content}\n\`\`\``
+    }
+
+    // 图片文件：转换为 base64
+    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'bmp', 'ico']
+    if (imageExtensions.includes(ext || '')) {
+      const buffer = fs.readFileSync(filePath)
+      const base64 = buffer.toString('base64')
+      return `[图片: ${fileName}]\n\`\`\`\ndata:image/${ext};base64,${base64}\n\`\`\``
+    }
+
+    // 其他文件：只发送文件路径
+    return `[文件: ${filePath}]`
+  } catch (error) {
+    console.error('[File] Failed to read file:', error)
+    return `[文件读取失败: ${fileName}]`
+  }
+}
+
+// IPC 处理器：上传文件到对话
+ipcMain.handle('upload-file', async (_event, filePath: string, conversationId: string) => {
+  try {
+    if (!currentProjectPath) {
+      return { success: false, error: '请先选择项目文件夹' }
+    }
+
+    const content = handleFileContent(filePath)
+    await callClaude(conversationId, currentProjectPath, content)
+
+    console.log('[File] Uploaded file to conversation:', conversationId)
+    return { success: true }
+  } catch (error) {
+    console.error('[File] Failed to upload file:', error)
     return { success: false, error: (error as Error).message }
   }
 })
@@ -2617,6 +2927,68 @@ ipcMain.handle('delete-project-conversation', async (_event, projectPath: string
     return { success: true }
   } catch (error) {
     console.error('Failed to delete project conversation:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// ==================== 操作日志 IPC ====================
+
+// 订阅实时日志
+ipcMain.on('subscribe-to-logs', (event) => {
+  console.log('[IPC] Client subscribed to logs')
+
+  let unsubscribed = false
+  const unsubscribe = operationLogger.subscribe((log) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('log-entry', log)
+    }
+  })
+
+  const cleanup = () => {
+    if (!unsubscribed) {
+      unsubscribed = true
+      unsubscribe()
+      console.log('[IPC] Client unsubscribed from logs')
+    }
+  }
+
+  event.sender.once('destroyed', cleanup)
+  event.sender.once('disconnect', cleanup)
+})
+
+// 获取历史日志
+ipcMain.handle('get-logs', async (_event, filter?: LogFilter) => {
+  console.log('[IPC] get-logs called, filter:', filter)
+  try {
+    if (filter) {
+      return operationLogger.getFilteredLogs(filter)
+    }
+    return operationLogger.getAllLogs()
+  } catch (error) {
+    console.error('[IPC] get-logs error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 清空日志
+ipcMain.handle('clear-logs', async () => {
+  console.log('[IPC] clear-logs called')
+  try {
+    operationLogger.clear()
+    return { success: true }
+  } catch (error) {
+    console.error('[IPC] clear-logs error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// 导出日志
+ipcMain.handle('export-logs', async (_event, format: 'json' | 'text' = 'json') => {
+  console.log('[IPC] export-logs called, format:', format)
+  try {
+    return operationLogger.export(format)
+  } catch (error) {
+    console.error('[IPC] export-logs error:', error)
     return { success: false, error: (error as Error).message }
   }
 })
