@@ -8,7 +8,7 @@
 /**
  * 工具权限配置
  */
-export interface ToolPermission {
+export interface ToolPermissionConfig {
   /** 工具名称 */
   tool: string
   /** 是否需要用户批准 */

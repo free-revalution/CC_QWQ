@@ -106,6 +106,8 @@ export interface ElectronAPI {
   openFile: () => Promise<string | null>
   /** 选择文件（用于文件附件功能） */
   selectFile: () => Promise<{ success: boolean; filePath?: string }>
+  /** 上传文件到对话 */
+  uploadFile: (filePath: string, conversationId: string) => Promise<{ success: boolean; error?: string }>
   /** 发送消息给 Claude Code，返回消息 ID */
   claudeSend: (
     conversationId: string,
@@ -176,6 +178,8 @@ export interface ElectronAPI {
   onPermissionRequest: (callback: (data: { conversationId: string; projectPath: string; toolName: string; details: string }) => void) => string
   /** 监听 Claude 初始化状态变化 */
   onClaudeStatusChange: (callback: (data: { conversationId: string; status: 'not_started' | 'initializing' | 'ready' }) => void) => string
+  /** Happy 架构改进 - 监听活动状态更新 */
+  onActivityUpdate: (callback: (data: import('./message').ActivityUpdate) => void) => string
   /** 获取 conversation 列表（用于移动端同步） */
   getConversationList: () => Promise<{ success: boolean; conversations?: MobileConversation[]; error?: string }>
   /** 平台信息 */
@@ -184,6 +188,38 @@ export interface ElectronAPI {
   onClaudeStream: (callback: (data: { conversationId: string; messageId: string; type: string; content: string; toolName?: string; toolInput?: string; timestamp: number }) => void) => string
   /** 移除监听器 */
   removeListener: (cleanupId: string) => void
+
+  /** ==================== 操作日志 ==================== */
+
+  /** 订阅实时日志 */
+  onLogEntry: (callback: (log: import('./operation').LogEntry) => void) => string
+
+  /** 获取日志 */
+  getLogs: (filter?: import('./operation').LogFilter) => Promise<import('./operation').LogEntry[]>
+
+  /** 清空日志 */
+  clearLogs: () => Promise<{ success: boolean }>
+
+  /** 导出日志 */
+  exportLogs: (format?: 'json' | 'text') => Promise<string>
+
+  /** ==================== 审批引擎 ==================== */
+
+  /** 响应审批请求 */
+  sendApprovalResponse: (response: {
+    requestId: string
+    choice: 'approve' | 'deny'
+    remember: 'once' | 'always'
+  }) => void
+
+  /** 获取审批偏好设置 */
+  getApprovalPreferences: () => Promise<import('./operation').UserPreferences>
+
+  /** 更新审批偏好设置 */
+  updateApprovalPreferences: (preferences: Partial<import('./operation').UserPreferences>) => Promise<{ success: boolean }>
+
+  /** 清除记住的选择 */
+  clearRememberedChoices: () => Promise<{ success: boolean }>
 }
 
 /**
@@ -312,3 +348,60 @@ declare global {
     electronAPI?: ElectronAPI
   }
 }
+
+//
+// Happy 架构改进类型导出
+//
+export type {
+  // Content Blocks
+  TextContent,
+  ToolUseContent,
+  ToolResultContent,
+  MessageContent,
+  // Tool Calls
+  ToolCall,
+  ToolCallState,
+  ToolPermission, // This is the runtime permission status from message.ts
+  // Messages
+  Message,
+  MessageKind,
+  UserTextMessage,
+  AgentTextMessage,
+  ToolCallMessage,
+  ModeSwitchMessage,
+  AgentEvent,
+  MessageMeta,
+  EnhancedMessage,
+  UsageData,
+  // WebSocket Updates
+  WSUpdateType,
+  ActivityUpdate,
+  SessionStateUpdate,
+  MessageUpdate,
+  // Session State
+  SessionState,
+} from './message'
+
+//
+// Controlled AI Operations - 类型导出
+//
+export type {
+  ToolPermissionConfig,
+  ApprovalDecision,
+  ToolCallRequest,
+  UserPreferences,
+  LogLevel,
+  OperationStatus,
+  LogCategory,
+  LogEntry,
+  LogFilter,
+  OperationType,
+  SnapshotType,
+  FileSnapshot,
+  BrowserStateSnapshot,
+  DirectorySnapshot,
+  OperationRecord,
+  Timeline,
+  MCPToolDefinition,
+  SSEConnectionInfo
+} from './operation'

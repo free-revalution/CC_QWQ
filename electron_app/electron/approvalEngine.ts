@@ -8,7 +8,7 @@ import { EventEmitter } from 'events'
 import { BrowserWindow } from 'electron'
 import * as os from 'os'
 import type {
-  ToolPermission,
+  ToolPermissionConfig,
   ApprovalDecision,
   ToolCallRequest,
   UserPreferences
@@ -41,7 +41,7 @@ function matchesAnyPattern(value: string, patterns: string[]): boolean {
 /**
  * 默认工具权限配置
  */
-const DEFAULT_TOOL_PERMISSIONS: Map<string, ToolPermission> = new Map([
+const DEFAULT_TOOL_PERMISSIONS: Map<string, ToolPermissionConfig> = new Map([
   // 浏览器工具
   ['browser_navigate', {
     tool: 'browser_navigate',
@@ -115,7 +115,7 @@ const DEFAULT_TOOL_PERMISSIONS: Map<string, ToolPermission> = new Map([
 ])
 
 export class ApprovalEngine extends EventEmitter {
-  private toolPermissions: Map<string, ToolPermission>
+  private toolPermissions: Map<string, ToolPermissionConfig>
   private userPreferences: UserPreferences
   private rememberedChoices: Map<string, 'once' | 'always'> = new Map()
   private pendingApprovals: Map<string, {
@@ -123,7 +123,7 @@ export class ApprovalEngine extends EventEmitter {
     request: ToolCallRequest
   }> = new Map()
 
-  constructor(customPermissions?: Map<string, ToolPermission>) {
+  constructor(customPermissions?: Map<string, ToolPermissionConfig>) {
     super()
     this.toolPermissions = customPermissions || DEFAULT_TOOL_PERMISSIONS
     this.userPreferences = {
@@ -213,7 +213,7 @@ export class ApprovalEngine extends EventEmitter {
    */
   private async requestUserApproval(
     request: ToolCallRequest,
-    context: ToolPermission | { reason: string }
+    context: ToolPermissionConfig | { reason: string }
   ): Promise<ApprovalDecision> {
     const requestId = `approval-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
 
@@ -293,7 +293,7 @@ export class ApprovalEngine extends EventEmitter {
   private checkSandboxConstraints(
     tool: string,
     params: any,
-    permission: ToolPermission
+    permission: ToolPermissionConfig
   ): { passed: boolean; reason?: string } {
     if (!permission.sandboxConstraints) return { passed: true }
 
