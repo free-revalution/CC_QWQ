@@ -41,6 +41,20 @@ export const ipc: ElectronAPI = {
   },
 
   /**
+   * 上传文件到对话
+   * @param filePath 文件路径
+   * @param conversationId 对话 ID
+   * @returns 上传结果
+   */
+  uploadFile: async (filePath: string, conversationId: string) => {
+    if (window.electronAPI?.uploadFile) {
+      return window.electronAPI.uploadFile(filePath, conversationId)
+    }
+    console.warn('electronAPI not available')
+    return { success: false, error: 'electronAPI not available' }
+  },
+
+  /**
    * 发送消息给 Claude Code
    * @param conversationId 对话 ID
    * @param projectPath 项目路径
@@ -369,6 +383,19 @@ export const ipc: ElectronAPI = {
   },
 
   /**
+   * Happy 架构改进 - 监听活动状态更新
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onActivityUpdate: (callback: (data: import('../types/message').ActivityUpdate) => void) => {
+    if (window.electronAPI?.onActivityUpdate) {
+      return window.electronAPI.onActivityUpdate(callback)
+    }
+    console.warn('electronAPI.onActivityUpdate not available')
+    return ''
+  },
+
+  /**
    * 读取目录
    * @param dirPath 目录路径
    */
@@ -411,6 +438,115 @@ export const ipc: ElectronAPI = {
     }
     console.warn('electronAPI.getConversationList not available')
     return { success: false, conversations: [] }
+  },
+
+  // ==================== 操作日志 ====================
+
+  /**
+   * 订阅实时日志
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onLogEntry: (callback: (data: import('../types/operation').LogEntry) => void) => {
+    if (window.electronAPI?.onLogEntry) {
+      const cleanupId = window.electronAPI.onLogEntry(callback)
+      return cleanupId
+    }
+    console.warn('electronAPI.onLogEntry not available')
+    return ''
+  },
+
+  /**
+   * 获取日志
+   */
+  getLogs: async (filter?: import('../types/operation').LogFilter) => {
+    if (window.electronAPI?.getLogs) {
+      return window.electronAPI.getLogs(filter)
+    }
+    console.warn('electronAPI.getLogs not available')
+    return []
+  },
+
+  /**
+   * 清空日志
+   */
+  clearLogs: async () => {
+    if (window.electronAPI?.clearLogs) {
+      return window.electronAPI.clearLogs()
+    }
+    console.warn('electronAPI.clearLogs not available')
+    return { success: false }
+  },
+
+  /**
+   * 导出日志
+   */
+  exportLogs: async (format: 'json' | 'text' = 'json') => {
+    if (window.electronAPI?.exportLogs) {
+      return window.electronAPI.exportLogs(format)
+    }
+    console.warn('electronAPI.exportLogs not available')
+    return ''
+  },
+
+  // ==================== 审批引擎 ====================
+
+  /**
+   * 发送审批响应
+   */
+  sendApprovalResponse: (response: {
+    requestId: string
+    choice: 'approve' | 'deny'
+    remember: 'once' | 'always'
+  }) => {
+    if (window.electronAPI?.sendApprovalResponse) {
+      window.electronAPI.sendApprovalResponse(response)
+    } else {
+      console.warn('electronAPI.sendApprovalResponse not available')
+    }
+  },
+
+  /**
+   * 获取审批偏好设置
+   */
+  getApprovalPreferences: async () => {
+    if (window.electronAPI?.getApprovalPreferences) {
+      return window.electronAPI.getApprovalPreferences()
+    }
+    console.warn('electronAPI.getApprovalPreferences not available')
+    return {
+      autoApproveLowRisk: true,
+      requireConfirmation: true,
+      rememberChoices: true,
+      notificationLevel: 'risky'
+    }
+  },
+
+  /**
+   * 更新审批偏好设置
+   */
+  updateApprovalPreferences: async (preferences: Partial<{
+    autoApproveLowRisk: boolean
+    requireConfirmation: boolean
+    rememberChoices: boolean
+    notificationLevel: 'all' | 'risky' | 'errors'
+  }>) => {
+    if (window.electronAPI?.updateApprovalPreferences) {
+      return window.electronAPI.updateApprovalPreferences(preferences)
+    }
+    console.warn('electronAPI.updateApprovalPreferences not available')
+    return { success: false }
+  },
+
+  /**
+   * 清除记住的选择
+   */
+  clearRememberedChoices: async () => {
+    if (window.electronAPI?.clearRememberedChoices) {
+      return window.electronAPI.clearRememberedChoices()
+    }
+    console.warn('electronAPI.clearRememberedChoices not available')
+    return { success: false }
   },
 
   /**
