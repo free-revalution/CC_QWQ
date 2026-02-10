@@ -6,6 +6,7 @@ import pkg from 'node-pty'
 import type { IPty } from 'node-pty'
 import { OperationLogger } from './operationLogger.js'
 import { ApprovalEngine } from './approvalEngine.js'
+import { MCPProxyServer } from './mcpProxyServer.js'
 import type { LogFilter } from '../src/types/operation.js'
 
 const { spawn: spawnPty } = pkg
@@ -3036,9 +3037,26 @@ ipcMain.handle('clear-remembered-choices', async () => {
   }
 })
 
-app.on('ready', () => {
+app.on('ready', async () => {
   createWindow()
   startWebSocketServer()
+
+  // 启动 MCP 代理服务器
+  const MCP_PROXY_PORT = 3010
+  try {
+    const mcpProxyServer = new MCPProxyServer(
+      MCP_PROXY_PORT,
+      approvalEngine,
+      operationLogger
+    )
+    await mcpProxyServer.start()
+    console.log('[Main] MCP Proxy Server started successfully')
+
+    // 存储到全局以便后续使用
+    ;(global as any).mcpProxyServer = mcpProxyServer
+  } catch (error) {
+    console.error('[Main] Failed to start MCP Proxy Server:', error)
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -3054,8 +3072,13 @@ app.on('activate', () => {
 })
 
 // 应用退出时关闭 WebSocket 服务器
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
   if (wss && typeof wss.close === 'function') {
     wss.close()
+  }
+
+  // 停止 MCP 代理服务器
+  if ((global as any).mcpProxyServer) {
+    await (global as any).mcpProxyServer.stop()
   }
 })

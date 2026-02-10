@@ -5,10 +5,11 @@
  */
 
 import { EventEmitter } from 'events'
-import express, { Request, Response } from 'express'
+import { createRequire } from 'module'
+import type { Request, Response } from 'express'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
-import type {
+import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
@@ -16,9 +17,12 @@ import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operatio
 import type { ApprovalEngine } from './approvalEngine.js'
 import type { OperationLogger } from './operationLogger.js'
 
+const require = createRequire(import.meta.url)
+const express = require('express')
+
 export class MCPProxyServer extends EventEmitter {
   private server: Server | null = null
-  private httpServer: ReturnType<typeof express().listen> | null = null
+  private httpServer: any | null = null
   private port: number
   private approvalEngine: ApprovalEngine
   private operationLogger: OperationLogger
@@ -140,12 +144,12 @@ export class MCPProxyServer extends EventEmitter {
         console.log(`[MCP Proxy] Tool call: ${name}`, args)
 
         // 记录工具调用开始
-        this.operationLogger.logToolStart(name, args)
+        this.operationLogger.logToolStart(name, args || {})
 
         // 审批检查
         const decision = await this.approvalEngine.evaluate({
           tool: name,
-          params: args,
+          params: args || {},
           source: 'claude-code'
         })
 
@@ -166,7 +170,7 @@ export class MCPProxyServer extends EventEmitter {
         // 执行工具（暂时返回模拟结果）
         try {
           const startTime = Date.now()
-          const result = await this.executeTool(name, args)
+          const result = await this.executeTool(name, args || {})
           const duration = Date.now() - startTime
 
           // 记录成功
