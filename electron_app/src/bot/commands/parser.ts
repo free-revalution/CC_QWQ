@@ -1,5 +1,5 @@
 // electron_app/src/bot/commands/parser.ts
-import { BotMessage } from '../../types/bot';
+import type { BotMessage } from '../../types/bot';
 
 export interface ParsedCommand {
   isCommand: boolean;

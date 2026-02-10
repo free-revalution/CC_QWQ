@@ -2,7 +2,7 @@
 import { BotAdapter } from './adapters/base';
 import { WhatsAppAdapter } from './adapters/whatsapp';
 import { FeishuAdapter } from './adapters/feishu';
-import { BotMessage, BotNotification, BotMetrics } from '../types/bot';
+import type { BotMessage, BotNotification, BotMetrics } from '../types/bot';
 
 interface BotConfig {
   whatsapp?: {

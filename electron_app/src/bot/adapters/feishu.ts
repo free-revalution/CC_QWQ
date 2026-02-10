@@ -1,5 +1,5 @@
 // electron_app/src/bot/adapters/feishu.ts
-import { BotMessage, BotNotification } from '../../types/bot';
+import type { BotNotification } from '../../types/bot';
 import { BotAdapter } from './base';
 
 /**
@@ -26,7 +26,6 @@ interface FeishuConfig {
  */
 export class FeishuAdapter extends BotAdapter {
   private config: FeishuConfig | null = null;
-  private webhookUrl: string | null = null;
   private authorizedUsers: Set<string> = new Set();
   private authorizedGroups: Set<string> = new Set();
   private isInitializing: boolean = false;
@@ -113,7 +112,6 @@ export class FeishuAdapter extends BotAdapter {
    */
   async disconnect(): Promise<void> {
     try {
-      this.webhookUrl = null;
       this.config = null;
       this.authorizedUsers.clear();
       this.authorizedGroups.clear();

@@ -1,5 +1,5 @@
 // electron_app/src/bot/commands/handler.ts
-import { CommandContext, CommandResult } from '../../types/bot';
+import type { CommandContext, CommandResult } from '../../types/bot';
 
 export interface CommandHandler {
   name: string;

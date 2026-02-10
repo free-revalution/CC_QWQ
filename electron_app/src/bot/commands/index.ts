@@ -1,6 +1,7 @@
 // electron_app/src/bot/commands/index.ts
-import { CommandHandler, CommandRegistry } from './handler';
-import { CommandContext } from '../../types/bot';
+import type { CommandHandler } from './handler';
+import { CommandRegistry } from './handler';
+import type { CommandContext } from '../../types/bot';
 
 const statusCommand: CommandHandler = {
   name: 'status',
@@ -22,7 +23,7 @@ const helpCommand: CommandHandler = {
   name: 'help',
   description: '显示帮助信息',
   usage: '/help [command]',
-  async execute(context: CommandContext) {
+  async execute(_context: CommandContext) {
     return {
       success: true,
       message: '帮助信息'

@@ -1,6 +1,6 @@
 // electron_app/src/bot/adapters/whatsapp.ts
 import { Client, LocalAuth } from 'whatsapp-web.js';
-import { BotMessage, BotNotification } from '../../types/bot';
+import type { BotMessage, BotNotification } from '../../types/bot';
 import { BotAdapter } from './base';
 import * as qrcode from 'qrcode-terminal';
 

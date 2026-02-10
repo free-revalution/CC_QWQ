@@ -1,4 +1,4 @@
-import { BotMessage, BotNotification } from '../../types/bot';
+import type { BotMessage, BotNotification } from '../../types/bot';
 
 export abstract class BotAdapter {
   protected connected = false;
