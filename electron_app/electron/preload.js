@@ -107,6 +107,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
     })
     return cleanupId
   },
+  // Happy 架构改进 - 监听活动状态更新
+  onActivityUpdate: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('activity-update', handler)
+    const cleanupId = `activity-update-${Date.now()}`
+    listenerCleanup.set(cleanupId, () => {
+      ipcRenderer.removeListener('activity-update', handler)
+    })
+    return cleanupId
+  },
+
+  // ==================== 操作日志 ====================
+
+  onLogEntry: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('log-entry', handler)
+    const cleanupId = `log-entry-${Date.now()}`
+    listenerCleanup.set(cleanupId, () => {
+      ipcRenderer.removeListener('log-entry', handler)
+    })
+    return cleanupId
+  },
+
+  getLogs: () => ipcRenderer.invoke('get-logs'),
+
+  clearLogs: () => ipcRenderer.invoke('clear-logs'),
+
+  exportLogs: (format = 'json') => ipcRenderer.invoke('export-logs', format),
+
+  // ==================== 审批引擎 ====================
+
+  sendApprovalResponse: (response) => {
+    ipcRenderer.send('approval-response', response)
+  },
+
+  getApprovalPreferences: () => ipcRenderer.invoke('get-approval-preferences'),
+
+  updateApprovalPreferences: (preferences) => ipcRenderer.invoke('update-approval-preferences', preferences),
+
+  clearRememberedChoices: () => ipcRenderer.invoke('clear-remembered-choices'),
+
   // 移除监听器
   removeListener: (cleanupId) => {
     const cleanup = listenerCleanup.get(cleanupId)
