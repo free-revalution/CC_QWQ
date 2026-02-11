@@ -7,6 +7,7 @@
 
 import * as path from 'path'
 import * as os from 'os'
+import * as crypto from 'crypto'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
 
 // 配置选项
@@ -240,7 +241,15 @@ export class BrowserManager {
     }
 
     try {
-      const pageId = options.id || `page-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+      const pageId = options.id || `page-${crypto.randomUUID()}`
+
+      // Validate page ID
+      if (!pageId || pageId.trim().length === 0) {
+        return {
+          success: false,
+          error: 'Page ID cannot be empty'
+        }
+      }
 
       // 检查 ID 是否已存在
       if (this.pages.has(pageId)) {
@@ -250,11 +259,20 @@ export class BrowserManager {
         }
       }
 
+      // Validate viewport dimensions
+      const viewport = options.viewport || this.config.viewport
+      if (viewport.width <= 0 || viewport.height <= 0) {
+        return {
+          success: false,
+          error: 'Invalid viewport dimensions'
+        }
+      }
+
       console.log(`[BrowserManager] Creating new page: ${pageId}`)
 
       // 创建新页面
       const page = await this.context!.newPage({
-        viewport: options.viewport || this.config.viewport
+        viewport
       })
 
       this.pages.set(pageId, page)
