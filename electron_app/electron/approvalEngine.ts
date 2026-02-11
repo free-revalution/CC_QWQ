@@ -222,13 +222,16 @@ export class ApprovalEngine extends EventEmitter {
       this.pendingApprovals.set(requestId, { resolve, request })
 
       // 发送事件到渲染进程
-      this.sendToRenderer('approval-request', {
+      const requestData = {
         requestId,
         tool: request.tool,
         params: request.params,
-        riskLevel: 'riskLevel' in context ? context.riskLevel : 'medium',
+        riskLevel: ('riskLevel' in context ? context.riskLevel : 'medium') as 'low' | 'medium' | 'high',
         reason: 'reason' in context ? context.reason : undefined
-      })
+      }
+      this.sendToRenderer('approval-request', requestData)
+      // 同时发射 EventEmitter 事件供 IPC 订阅使用
+      this.emit('approval-request', requestData)
 
       // 超时自动拒绝（60秒）
       const timeout = setTimeout(() => {
@@ -381,5 +384,32 @@ export class ApprovalEngine extends EventEmitter {
   clearRememberedChoices(): void {
     this.rememberedChoices.clear()
     console.log('[ApprovalEngine] Cleared remembered choices')
+  }
+
+  /**
+   * 订阅审批请求事件
+   * @param callback 回调函数
+   * @returns 取消订阅函数
+   */
+  onApprovalRequest(callback: (request: {
+    requestId: string
+    tool: string
+    params: any
+    riskLevel: 'low' | 'medium' | 'high'
+    reason?: string
+  }) => void): () => void {
+    this.on('approval-request', callback)
+    return () => {
+      this.off('approval-request', callback)
+    }
+  }
+
+  /**
+   * 获取工具配置
+   * @param tool 工具名称
+   * @returns 工具权限配置
+   */
+  getToolConfig(tool: string): ToolPermissionConfig | undefined {
+    return this.toolPermissions.get(tool)
   }
 }
