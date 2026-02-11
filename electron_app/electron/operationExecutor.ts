@@ -227,8 +227,40 @@ export class OperationExecutor {
    * 回滚文件到指定快照
    */
   async rollback(snapshotId: string): Promise<ExecutionResult> {
-    // 实现将在后续步骤完成
-    return { success: false, error: 'Not implemented' }
+    const snapshot = this.snapshots.get(snapshotId)
+
+    if (!snapshot) {
+      return {
+        success: false,
+        error: `Snapshot not found: ${snapshotId}`
+      }
+    }
+
+    try {
+      if (snapshot.content === '') {
+        // 文件原本不存在，删除它
+        await fs.unlink(snapshot.path)
+      } else {
+        // 恢复文件内容
+        await fs.writeFile(snapshot.path, snapshot.content, 'utf-8')
+      }
+
+      // 从内存中移除快照
+      this.snapshots.delete(snapshotId)
+
+      return {
+        success: true,
+        data: {
+          rolledBackTo: snapshotId,
+          filePath: snapshot.path
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Rollback failed: ${(error as Error).message}`
+      }
+    }
   }
 
   /**
