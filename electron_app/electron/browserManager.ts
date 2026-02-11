@@ -51,6 +51,8 @@ export interface CookieOptions {
   expiry?: number
 }
 
+type InitializationState = 'uninitialized' | 'initializing' | 'initialized'
+
 export class BrowserManager {
   private static instance: BrowserManager | null = null
   private static readonly DEFAULT_PAGE_ID = 'main'
@@ -59,6 +61,7 @@ export class BrowserManager {
   private context: BrowserContext | null = null
   private pages: Map<string, Page> = new Map()
   private config: BrowserConfig
+  private initializationState: InitializationState = 'uninitialized'
 
   private constructor(config: BrowserConfig = {}) {
     this.config = {
@@ -91,6 +94,14 @@ export class BrowserManager {
       return
     }
 
+    // Prevent race condition with concurrent initialization attempts
+    if (this.initializationState === 'initializing') {
+      console.log('[BrowserManager] Browser initialization already in progress')
+      return
+    }
+
+    this.initializationState = 'initializing'
+
     try {
       console.log('[BrowserManager] Initializing browser...')
 
@@ -121,9 +132,40 @@ export class BrowserManager {
       this.pages.set(BrowserManager.DEFAULT_PAGE_ID, defaultPage)
       console.log('[BrowserManager] Default page created')
 
+      this.initializationState = 'initialized'
       console.log('[BrowserManager] Browser initialized successfully')
     } catch (error) {
-      console.error('[BrowserManager] Failed to initialize browser:', error)
+      console.error('[BrowserManager] Failed to initialize browser:', error instanceof Error ? error.message : String(error))
+
+      // Clean up any resources that were successfully created
+      if (this.pages.size > 0) {
+        const failedPageCloses: string[] = []
+        for (const [pageId, page] of this.pages.entries()) {
+          try {
+            await page.close()
+          } catch {
+            failedPageCloses.push(pageId)
+          }
+        }
+        this.pages.clear()
+        if (failedPageCloses.length > 0) {
+          console.error(`[BrowserManager] Failed to close pages during cleanup: ${failedPageCloses.join(', ')}`)
+        }
+      }
+      if (this.context) {
+        try {
+          await this.context.close()
+        } catch {}
+        this.context = null
+      }
+      if (this.browser) {
+        try {
+          await this.browser.close()
+        } catch {}
+        this.browser = null
+      }
+
+      this.initializationState = 'uninitialized'
       throw error
     }
   }
@@ -141,15 +183,21 @@ export class BrowserManager {
       console.log('[BrowserManager] Closing browser...')
 
       // 关闭所有页面
+      const failedPageCloses: string[] = []
       for (const [pageId, page] of this.pages.entries()) {
         try {
           await page.close()
           console.log(`[BrowserManager] Page ${pageId} closed`)
         } catch (error) {
-          console.error(`[BrowserManager] Failed to close page ${pageId}:`, error)
+          console.error(`[BrowserManager] Failed to close page ${pageId}:`, error instanceof Error ? error.message : String(error))
+          failedPageCloses.push(pageId)
         }
       }
       this.pages.clear()
+
+      if (failedPageCloses.length > 0) {
+        console.warn(`[BrowserManager] Some pages failed to close: ${failedPageCloses.join(', ')}`)
+      }
 
       // 关闭上下文
       if (this.context) {
@@ -163,9 +211,10 @@ export class BrowserManager {
         this.browser = null
       }
 
+      this.initializationState = 'uninitialized'
       console.log('[BrowserManager] Browser closed successfully')
     } catch (error) {
-      console.error('[BrowserManager] Error closing browser:', error)
+      console.error('[BrowserManager] Error closing browser:', error instanceof Error ? error.message : String(error))
       throw error
     }
   }
@@ -174,7 +223,9 @@ export class BrowserManager {
    * 检查是否已初始化
    */
   isInitialized(): boolean {
-    return this.browser !== null && this.context !== null
+    return this.initializationState === 'initialized' &&
+           this.browser !== null &&
+           this.context !== null
   }
 
   /**
