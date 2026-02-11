@@ -825,17 +825,120 @@ export class BrowserManager {
   /**
    * 上传文件
    */
-  async upload(): Promise<BrowserResult> {
-    // TODO: Task 9 - Implement upload
-    throw new Error('Not implemented')
+  async upload(pageId: string, selector: string, filePath: string): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    // Validate file path
+    if (!filePath || filePath.trim().length === 0) {
+      return {
+        success: false,
+        error: 'File path cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Uploading file to page '${pageId}': ${filePath}`)
+
+      // 使用 setInputFiles 上传文件
+      await page.setInputFiles(selector, filePath)
+
+      console.log(`[BrowserManager] File uploaded to page '${pageId}'`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to upload file:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to upload file: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 下载文件
    */
-  async download(): Promise<BrowserResult> {
-    // TODO: Task 9 - Implement download
-    throw new Error('Not implemented')
+  async download(pageId: string, selector: string): Promise<BrowserResult<string>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Downloading file from page '${pageId}': ${selector}`)
+
+      // 设置下载处理
+      const downloadPromise = page.waitForEvent('download')
+
+      // 点击下载元素
+      await page.click(selector)
+
+      // 等待下载开始
+      const download = await downloadPromise
+
+      // 获取保存路径（使用临时目录）
+      const os = await import('os')
+      const path = await import('path')
+      const savePath = path.join(os.tmpdir(), `claude-download-${Date.now()}-${download.suggestedFilename()}`)
+
+      // 保存文件
+      await download.saveAs(savePath)
+
+      console.log(`[BrowserManager] File downloaded to: ${savePath}`)
+
+      return {
+        success: true,
+        data: savePath
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to download file:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to download file: ${errorMessage}`
+      }
+    }
   }
 
   /**
