@@ -198,7 +198,35 @@ export class OperationExecutor {
    * 创建文件快照
    */
   private async createSnapshot(filePath: string): Promise<FileSnapshot> {
-    // 实现将在后续步骤完成
-    throw new Error('Not implemented')
+    const snapshotId = `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+    const timestamp = Date.now()
+
+    try {
+      const content = await fs.readFile(filePath, 'utf-8')
+      const hash = createHash('sha256').update(content).digest('hex')
+
+      const snapshot: FileSnapshot = {
+        type: 'file',
+        path: filePath,
+        content,
+        hash,
+        timestamp,
+        size: content.length
+      }
+
+      return snapshot
+    } catch (error) {
+      // 文件不存在或无法读取
+      const snapshot: FileSnapshot = {
+        type: 'file',
+        path: filePath,
+        content: '',
+        hash: '',
+        timestamp,
+        size: 0
+      }
+
+      return snapshot
+    }
   }
 }
