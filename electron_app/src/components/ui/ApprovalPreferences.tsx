@@ -216,7 +216,7 @@ export function ApprovalPreferences({ onClose }: ApprovalPreferencesProps) {
                     name="notificationLevel"
                     value={level.value}
                     checked={preferences.notificationLevel === level.value}
-                    onChange={(e) => handleUpdate({ notificationLevel: e.target.value as any })}
+                    onChange={(e) => handleUpdate({ notificationLevel: e.target.value as 'all' | 'risky' | 'errors' })}
                     className="mt-1"
                   />
                   <div>

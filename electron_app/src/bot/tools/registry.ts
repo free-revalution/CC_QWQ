@@ -24,7 +24,7 @@ export interface ToolViewFormatter {
   shouldTruncate?(tool: ToolCallMessage['tool'], outputLength: number): boolean;
 
   // Extract key information for summaries
-  extractKeyInfo?(tool: ToolCallMessage['tool']): Record<string, any>;
+  extractKeyInfo?(tool: ToolCallMessage['tool']): Record<string, unknown>;
 }
 
 // Bash tool formatter
@@ -181,7 +181,7 @@ const todoFormatter: ToolViewFormatter = {
 
     output += `任务数: ${todos.length}\n\n`;
 
-    todos.forEach((todo: any, idx: number) => {
+    todos.forEach((todo: { status: string; priority: string; content: string }, idx: number) => {
       const status = todo.status === 'completed' ? '✅' :
                     todo.status === 'in_progress' ? '🔄' : '⬜';
       const priority = todo.priority === 'high' ? '🔴' :
@@ -195,14 +195,14 @@ const todoFormatter: ToolViewFormatter = {
   extractKeyInfo: (tool) => {
     return {
       todoCount: tool.input?.todos?.length || 0,
-      completed: tool.input?.todos?.filter((t: any) => t.status === 'completed').length || 0
+      completed: tool.input?.todos?.filter((t: { status: string }) => t.status === 'completed').length || 0
     };
   }
 };
 
 // Task tool formatter (subagent)
 const taskFormatter: ToolViewFormatter = {
-  formatSummary: (_tool) => {
+  formatSummary: () => {
     return `🎯 子任务启动`;
   },
 
@@ -220,7 +220,7 @@ const taskFormatter: ToolViewFormatter = {
     return output;
   },
 
-  needsDesktopHandling: (_tool) => {
+  needsDesktopHandling: () => {
     // Task tools are complex, recommend desktop
     return true;
   }
@@ -356,7 +356,7 @@ export function shouldTruncateOutput(tool: ToolCallMessage['tool'], outputLength
 /**
  * Extract key info from tool
  */
-export function extractToolKeyInfo(tool: ToolCallMessage['tool']): Record<string, any> | null {
+export function extractToolKeyInfo(tool: ToolCallMessage['tool']): Record<string, unknown> | null {
   const formatter = getToolFormatter(tool.name);
   return formatter.extractKeyInfo?.(tool) || null;
 }

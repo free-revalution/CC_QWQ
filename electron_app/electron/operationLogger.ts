@@ -8,9 +8,7 @@ import { EventEmitter } from 'events'
 import type {
   LogEntry,
   LogFilter,
-  LogLevel,
-  OperationStatus,
-  LogCategory
+  LogLevel
 } from '../src/types/operation.js'
 
 export class OperationLogger extends EventEmitter {
@@ -27,7 +25,7 @@ export class OperationLogger extends EventEmitter {
   /**
    * 工具调用开始
    */
-  logToolStart(tool: string, params: any, metadata?: any): void {
+  logToolStart(tool: string, params: Record<string, unknown>, metadata?: Record<string, unknown>): void {
     this.log({
       level: 'info',
       status: 'running',
@@ -43,7 +41,7 @@ export class OperationLogger extends EventEmitter {
   /**
    * 等待用户批准
    */
-  logAwaitingApproval(tool: string, params: any, approvalId: string): void {
+  logAwaitingApproval(tool: string, params: Record<string, unknown>, approvalId: string): void {
     this.log({
       level: 'warning',
       status: 'awaiting_approval',
@@ -86,7 +84,7 @@ export class OperationLogger extends EventEmitter {
   /**
    * 工具执行成功
    */
-  logToolSuccess(tool: string, result: any, duration: number): void {
+  logToolSuccess(tool: string, result: unknown, duration: number): void {
     this.log({
       level: 'success',
       status: 'completed',
@@ -242,7 +240,7 @@ export class OperationLogger extends EventEmitter {
 
   // ==================== 辅助方法 ====================
 
-  private formatToolMessage(tool: string, params: any): string {
+  private formatToolMessage(tool: string, params: Record<string, unknown>): string {
     switch (tool) {
       case 'browser_navigate':
         return `导航到 ${params.url || '未知 URL'}`
@@ -250,9 +248,10 @@ export class OperationLogger extends EventEmitter {
         return `点击元素: ${params.selector || '未知选择器'}`
       case 'file_read':
         return `读取文件: ${params.path || '未知路径'}`
-      case 'file_write':
-        const size = params.content ? `${params.content.length} 字节` : '0 字节'
+      case 'file_write': {
+        const size = params.content ? `${String(params.content).length} 字节` : '0 字节'
         return `写入文件: ${params.path || '未知路径'} (${size})`
+      }
       case 'system_exec':
         return `执行命令: ${params.command || '未知命令'}`
       default:

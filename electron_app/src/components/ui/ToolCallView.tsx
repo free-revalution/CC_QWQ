@@ -54,11 +54,11 @@ export default function ToolCallView({ tool, expanded: defaultExpanded = false }
   const hasResult = tool.result !== undefined
 
   // 格式化输入参数
-  const formatInput = (input: any): string => {
+  const formatInput = (input: unknown): string => {
     if (!input) return ''
     if (typeof input === 'string') return input
-    if (typeof input === 'object') {
-      return Object.entries(input)
+    if (typeof input === 'object' && input !== null) {
+      return Object.entries(input as Record<string, unknown>)
         .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
         .join('\n')
     }
@@ -66,7 +66,7 @@ export default function ToolCallView({ tool, expanded: defaultExpanded = false }
   }
 
   // 格式化结果
-  const formatResult = (result: any): string => {
+  const formatResult = (result: unknown): string => {
     if (!result) return ''
     if (typeof result === 'string') return result
     return JSON.stringify(result, null, 2)

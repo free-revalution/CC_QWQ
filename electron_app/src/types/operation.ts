@@ -53,7 +53,7 @@ export interface ToolCallRequest {
   /** 工具名称 */
   tool: string
   /** 参数 */
-  params: Record<string, any>
+  params: Record<string, unknown>
   /** 来源 */
   source: 'claude-code' | 'user' | 'mobile'
 }
@@ -96,7 +96,7 @@ export interface LogEntry {
   /** 消息 */
   message: string
   /** 详细信息 */
-  details?: any
+  details?: unknown
   /** 持续时间（毫秒） */
   duration?: number
   /** 元数据 */
@@ -192,11 +192,11 @@ export interface OperationRecord {
   id: string
   type: OperationType
   timestamp: number
-  params: any
-  result?: any
+  params: Record<string, unknown>
+  result?: unknown
   error?: string
   snapshotBefore: SnapshotType
-  rollbackData?: any
+  rollbackData?: unknown
   duration: number
 }
 

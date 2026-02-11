@@ -23,7 +23,7 @@ export class ToolCallManager {
   /**
    * 创建新的工具调用
    */
-  create(id: string, name: ClaudeToolType, input: any): ToolCall {
+  create(id: string, name: ClaudeToolType, input: Record<string, unknown>): ToolCall {
     const call: ToolCall = {
       name,
       input,
@@ -40,7 +40,7 @@ export class ToolCallManager {
   /**
    * 更新工具调用状态
    */
-  updateState(id: string, state: ToolCallState, result?: any): void {
+  updateState(id: string, state: ToolCallState, result?: unknown): void {
     const call = this.calls.get(id)
     if (call) {
       call.state = state
@@ -119,7 +119,7 @@ export class ToolCallManager {
   /**
    * 提取可读描述
    */
-  private extractDescription(name: ClaudeToolType, input: any): string | null {
+  private extractDescription(name: ClaudeToolType, input: Record<string, unknown>): string | null {
     try {
       switch (name) {
         case 'Read':
@@ -138,7 +138,7 @@ export class ToolCallManager {
             : null
 
         case 'Bash':
-          return input?.command
+          return typeof input?.command === 'string'
             ? `执行: ${input.command.split(' ')[0]}`
             : null
 
@@ -163,7 +163,7 @@ export class ToolCallManager {
             : null
 
         case 'Task':
-          return input?.prompt
+          return typeof input?.prompt === 'string'
             ? `启动子任务: ${input.prompt.slice(0, 30)}...`
             : null
 

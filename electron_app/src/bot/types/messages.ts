@@ -59,12 +59,12 @@ export interface ToolCallMessage extends BaseMessage {
   tool: {
     name: string;
     state: ToolState;
-    input: any;
+    input: Record<string, unknown>;
     description?: string;
     createdAt: number;
     startedAt?: number;
     completedAt?: number;
-    result?: any;  // Result when tool completes
+    result?: unknown;  // Result when tool completes
   };
   permission?: {
     id: string;
@@ -78,7 +78,7 @@ export interface ToolCallMessage extends BaseMessage {
   // Chat display (simplified)
   summary?: string;
   // Full data (for desktop or /full command)
-  fullData?: any;
+  fullData?: Record<string, unknown>;
 }
 
 // Tool result message
@@ -86,7 +86,7 @@ export interface ToolResultMessage extends BaseMessage {
   kind: 'tool-result';
   toolUseId: string;
   toolName: string;
-  result: any;
+  result: unknown;
   isError?: boolean;
   timestamp: number;
   // Chat display summary
@@ -101,7 +101,7 @@ export interface PermissionMessage extends BaseMessage {
   permission: {
     id: string;
     toolName: string;
-    input: any;
+    input: Record<string, unknown>;
     status: PermissionStatus;
     reason?: string;
     mode?: string;
@@ -119,7 +119,7 @@ export interface EventMessage extends BaseMessage {
   kind: 'event';
   event: {
     type: 'ready' | 'mode_switch' | 'context_reset' | 'compaction' | 'error';
-    data?: any;
+    data?: Record<string, unknown>;
     message?: string;
   };
 }
@@ -130,7 +130,7 @@ export interface ErrorMessage extends BaseMessage {
   error: {
     code?: string;
     message: string;
-    details?: any;
+    details?: Record<string, unknown>;
   };
   recoverable?: boolean;
 }

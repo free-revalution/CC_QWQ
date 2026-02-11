@@ -1,7 +1,9 @@
 /**
  * Claude Code Integration for Bot System
+ * 中文：与 Claude Code 交互的集成模块
  *
  * Bridges the bot message system with Claude Code IPC.
+ * 中文：通过 IPC 与 Claude Code 交互的模块
  */
 
 import { messageReducer, createReducerState } from '../reducer/reducer';
@@ -9,31 +11,36 @@ import type { ReducerState } from '../types/reducer';
 import type { Message, PermissionMessage } from '../types/messages';
 import { ipc } from '../../lib/ipc';
 
+/**
+ * Claude Integration Configuration
+ * 中文：与 Claude Code 交互的配置项
+ */
 export interface ClaudeIntegrationConfig {
-  conversationId: string;
-  projectPath: string;
-  platform: 'whatsapp' | 'feishu';
+  conversationId: string; // 对话 ID
+  projectPath: string; // 项目路径
+  platform: 'whatsapp' | 'feishu'; // 平台
 }
 
 /**
  * Extended permission data with conversation context
  */
 interface PendingPermissionData {
-  conversationId: string;
-  toolName: string;
-  input: any;
-  createdAt: number;
-  expiresAt: number;
+  conversationId: string; // 对话 ID
+  toolName: string; // 工具名称
+  input: Record<string, unknown>; // 输入参数
+  createdAt: number; // 创建时间
+  expiresAt: number; // 过期时间
 }
 
 export class ClaudeIntegration {
-  private state: ReducerState;
-  private currentConversation: string | null = null;
-  private currentProject: string | null = null;
-  private platform: 'whatsapp' | 'feishu';
+  private state: ReducerState; // 状态
+  private currentConversation: string | null = null; // 当前对话 ID
+  private currentProject: string | null = null; // 当前项目路径
+  private platform: 'whatsapp' | 'feishu'; // 平台
   private permissionTimeoutMs: number = 5 * 60 * 1000; // 5 minutes default
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: NodeJS.Timeout | null = null; // 清理间隔
 
+  // 清理过期权限的间隔
   constructor(platform: 'whatsapp' | 'feishu') {
     this.platform = platform;
     this.state = createReducerState();
@@ -66,7 +73,7 @@ export class ClaudeIntegration {
   /**
    * Process incoming Claude stream
    */
-  async processStream(data: any): Promise<Message[]> {
+  async processStream(data: unknown): Promise<Message[]> {
     const result = messageReducer(this.state, [data], null);
 
     if (result.permissions.length > 0) {
@@ -76,10 +83,8 @@ export class ClaudeIntegration {
         if (this.currentConversation) {
           this.state.pendingPermissions.set(perm.permission.id, {
             ...perm.permission,
-            conversationId: this.currentConversation,
             createdAt: Date.now(),
-            expiresAt: Date.now() + this.permissionTimeoutMs
-          } as any);
+          });
         }
         await this.sendPermissionNotification(perm);
       }

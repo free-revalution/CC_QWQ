@@ -6,7 +6,6 @@
 
 import type { CommandHandler } from './handler';
 import { CommandRegistry } from './handler';
-import type { CommandContext } from '../../types/bot';
 import { commandParser } from './parser';
 import {
   statusCommand,
@@ -21,7 +20,7 @@ const helpCommand: CommandHandler = {
   name: 'help',
   description: '显示帮助信息',
   usage: '/help [command]',
-  async execute(_context: CommandContext) {
+  async execute() {
     return {
       success: true,
       message: getCommandHelpText()

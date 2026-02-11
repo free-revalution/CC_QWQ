@@ -98,7 +98,7 @@ export const clearCommand: CommandHandler = {
   name: 'clear',
   description: '清除对话上下文',
   usage: '/clear',
-  async execute(_context) {
+  async execute() {
     // TODO: Implement context clearing
     return {
       success: true,
@@ -142,7 +142,7 @@ export const trustCommand: CommandHandler = {
   name: 'trust',
   description: '信任文件夹',
   usage: '/trust',
-  async execute(_context) {
+  async execute() {
     // TODO: Implement trust command properly
     return {
       success: true,

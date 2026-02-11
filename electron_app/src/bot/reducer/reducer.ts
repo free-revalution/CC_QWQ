@@ -23,7 +23,7 @@ export interface ClaudeRawMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
   timestamp: number;
-  content: any[];
+  content: unknown[];
   type?: 'text' | 'tool_call' | 'tool_result' | 'permission_request' | 'event';
   localId?: string;
 }
@@ -34,7 +34,7 @@ export interface ClaudeRawMessage {
 export function messageReducer(
   state: ReducerState,
   rawMessages: ClaudeRawMessage[],
-  agentState?: any
+  agentState?: unknown
 ): ReducerResult {
 
   const newMessages: Message[] = [];
@@ -52,7 +52,7 @@ export function messageReducer(
         continue;
       }
 
-      const req = request as { tool?: string; arguments?: any; createdAt?: number };
+      const req = request as { tool?: string; arguments?: Record<string, unknown>; createdAt?: number };
 
       // Create permission message
       const permMessage: PermissionMessage = {
@@ -110,7 +110,7 @@ export function messageReducer(
     if (msg.role === 'user') {
       // Extract text from content array or use raw content
       const content = Array.isArray(msg.content)
-        ? msg.content.find((b: any) => b.type === 'text')?.text || ''
+        ? msg.content.find((b: unknown) => typeof b === 'object' && b !== null && 'type' in b && b.type === 'text')?.text || ''
         : String(msg.content);
 
       const userMsg: UserTextMessage = {
@@ -274,9 +274,9 @@ export function messageReducer(
         platform: 'whatsapp',
         conversationId: '',
         event: {
-          type: (contentObj as any).type || 'ready',
+          type: typeof contentObj === 'object' && contentObj !== null && 'type' in contentObj ? String(contentObj.type) : 'ready',
           data: contentObj,
-          message: (contentObj as any).message
+          message: typeof contentObj === 'object' && contentObj !== null && 'message' in contentObj ? String(contentObj.message) : undefined
         }
       };
 
@@ -306,7 +306,7 @@ function allocateId(): string {
   return Math.random().toString(36).substring(2, 15);
 }
 
-function generateToolSummary(tool: any): string {
+function generateToolSummary(tool: { name: string; input?: Record<string, unknown> }): string {
   // Generate concise summary for chat display
   if (tool.name === 'bash:execute') {
     const cmd = tool.input?.command || tool.input?.cmd || '';
@@ -318,14 +318,14 @@ function generateToolSummary(tool: any): string {
   return tool.name;
 }
 
-function generateToolResultSummary(tool: any): string {
+function generateToolResultSummary(tool: { state: 'completed' | 'error' | 'running' }): string {
   if (tool.state === 'completed') {
     return `✅ 完成`;
-  }
-  if (tool.state === 'error') {
+  } else if (tool.state === 'error') {
     return `❌ 错误`;
+  } else {
+    return `⏳ 运行中...`;
   }
-  return `⏳ 运行中`;
 }
 
 /**

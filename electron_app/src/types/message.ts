@@ -25,7 +25,7 @@ export interface ToolUseContent {
   type: 'tool_use'
   id: string                    // 工具调用唯一 ID
   name: ClaudeToolType          // 工具名称
-  input: any                    // 工具输入参数
+  input: Record<string, unknown> // 工具输入参数
   description?: string           // 可读描述
 }
 
@@ -78,12 +78,12 @@ export interface ToolPermission {
 export interface ToolCall {
   name: ClaudeToolType
   state: ToolCallState
-  input: any
+  input: Record<string, unknown>
   createdAt: number
   startedAt: number | null
   completedAt: number | null
   description: string | null
-  result?: any
+  result?: unknown
   permission?: ToolPermission
 }
 

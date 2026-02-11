@@ -201,7 +201,7 @@ function formatPermissionMessage(message: Message, options: FormatOptions): stri
 /**
  * Format event message
  */
-function formatEventMessage(message: Message, _options: FormatOptions): string {
+function formatEventMessage(message: Message): string {
   if (!isEventMessage(message)) return '';
 
   const event = message.event;
@@ -308,7 +308,7 @@ export function formatPermissionRequest(permission: PermissionMessage, platform:
 /**
  * Format tool execution result
  */
-export function formatToolExecutionResult(tool: ToolCallMessage['tool'], _platform: 'whatsapp' | 'feishu', result?: any): string {
+export function formatToolExecutionResult(tool: ToolCallMessage['tool'], _platform: 'whatsapp' | 'feishu', result?: unknown): string {
   let output = '';
 
   if (tool.state === 'completed') {
@@ -366,7 +366,7 @@ function formatDurationMs(ms: number): string {
   return `${Math.floor(ms / 60000)}m`;
 }
 
-function formatResultSummary(result: any, maxLength: number): string | null {
+function formatResultSummary(result: unknown, maxLength: number): string | null {
   if (typeof result === 'string') {
     return result.length > maxLength ? result.substring(0, maxLength) + '...' : result;
   }

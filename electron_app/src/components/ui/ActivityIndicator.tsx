@@ -6,6 +6,7 @@
  * 显示会话的实时活动状态（thinking、active）
  */
 
+import { useState, useEffect } from 'react'
 import { Loader2, Clock } from 'lucide-react'
 
 interface ActivityIndicatorProps {
@@ -23,6 +24,16 @@ export default function ActivityIndicator({
   thinkingAt,
   className = ''
 }: ActivityIndicatorProps) {
+  const [currentTime, setCurrentTime] = useState(() => Date.now())
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Date.now())
+    }, 1000) // 每秒更新一次
+
+    return () => clearInterval(interval)
+  }, [])
+
   if (!active && !thinking) {
     return null
   }
@@ -30,11 +41,18 @@ export default function ActivityIndicator({
   // 计算思考持续时间
   const getThinkingDuration = (): string => {
     if (!thinkingAt) return ''
-    const duration = Math.floor((Date.now() - thinkingAt) / 1000)
+    const duration = Math.floor((currentTime - thinkingAt) / 1000)
     if (duration < 60) return `${duration}s`
     const minutes = Math.floor(duration / 60)
     const seconds = duration % 60
     return `${minutes}m ${seconds}s`
+  }
+
+  // 计算活跃时间
+  const getActiveDuration = (): string => {
+    if (!activeAt) return ''
+    const duration = Math.floor((currentTime - activeAt) / 1000)
+    return `${duration}s`
   }
 
   return (
@@ -56,7 +74,7 @@ export default function ActivityIndicator({
           <Clock size={12} />
           <span>活跃</span>
           <span className="text-secondary">
-            ({Math.floor((Date.now() - activeAt) / 1000)}s 前)
+            ({getActiveDuration()} 前)
           </span>
         </div>
       )}

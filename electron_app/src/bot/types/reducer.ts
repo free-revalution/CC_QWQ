@@ -8,7 +8,7 @@ import type { Message, PermissionMessage } from './messages';
 
 export interface PermissionData {
   toolName: string;
-  input: any;
+  input: Record<string, unknown>;
   createdAt: number;
   completedAt?: number;
   status: 'pending' | 'approved' | 'denied' | 'canceled';

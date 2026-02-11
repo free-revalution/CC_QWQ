@@ -13,7 +13,7 @@ import {
 export interface ApprovalRequestData {
   requestId: string
   tool: string
-  params: any
+  params: Record<string, unknown>
   riskLevel: 'low' | 'medium' | 'high'
   reason?: string
 }
@@ -76,6 +76,18 @@ export function ApprovalDialog({
 }: ApprovalDialogProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
+  const handleDeny = useCallback(() => {
+    if (!request) return
+    onRespond(request.requestId, 'deny', 'once')
+    setShowAdvanced(false)
+  }, [request, onRespond])
+
+  const handleApprove = useCallback(() => {
+    if (!request) return
+    onRespond(request.requestId, 'approve', showAdvanced ? 'always' : 'once')
+    setShowAdvanced(false)
+  }, [request, onRespond, showAdvanced])
+
   // ESC 关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -87,19 +99,7 @@ export function ApprovalDialog({
 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen])
-
-  const handleApprove = useCallback(() => {
-    if (!request) return
-    onRespond(request.requestId, 'approve', showAdvanced ? 'always' : 'once')
-    setShowAdvanced(false)
-  }, [request, onRespond, showAdvanced])
-
-  const handleDeny = useCallback(() => {
-    if (!request) return
-    onRespond(request.requestId, 'deny', 'once')
-    setShowAdvanced(false)
-  }, [request, onRespond])
+  }, [isOpen, handleDeny])
 
   if (!isOpen || !request) return null
 

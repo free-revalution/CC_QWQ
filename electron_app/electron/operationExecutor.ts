@@ -37,7 +37,7 @@ function matchesAnyPattern(value: string, patterns: string[]): boolean {
 // 执行结果
 interface ExecutionResult {
   success: boolean
-  data?: any
+  data?: unknown
   error?: string
   snapshotId?: string
 }
@@ -63,7 +63,7 @@ export class OperationExecutor {
       }
 
       // 验证路径
-      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths)) {
+      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths || [])) {
         return { success: false, error: `Access denied: path not in allowed sandbox` }
       }
 
@@ -180,7 +180,7 @@ export class OperationExecutor {
       }
 
       // 验证路径
-      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths)) {
+      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths || [])) {
         return { success: false, error: `Access denied: path not in allowed sandbox` }
       }
 
@@ -297,7 +297,7 @@ export class OperationExecutor {
       // 存储快照到内存
       this.snapshots.set(snapshotId, snapshot)
       return snapshotId
-    } catch (error) {
+    } catch {
       // 文件不存在或无法读取，存储空快照
       const snapshot: FileSnapshot = {
         type: 'file',

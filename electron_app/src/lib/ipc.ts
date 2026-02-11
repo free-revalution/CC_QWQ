@@ -557,7 +557,7 @@ export const ipc: ElectronAPI = {
   onApprovalRequest: (callback: (data: {
     requestId: string
     tool: string
-    params: any
+    params: Record<string, unknown>
     riskLevel: 'low' | 'medium' | 'high'
     reason?: string
   }) => void) => {

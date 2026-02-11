@@ -79,7 +79,7 @@ export default function ConversationPage({
   // 权限弹窗状态
   const [permissionRequest, setPermissionRequest] = useState<{ conversationId: string; projectPath: string; toolName: string; details: string } | null>(null)
   // 审批弹窗状态（Controlled AI Operations）
-  const [approvalRequest, setApprovalRequest] = useState<{ requestId: string; tool: string; params: any; riskLevel: 'low' | 'medium' | 'high'; reason?: string } | null>(null)
+  const [approvalRequest, setApprovalRequest] = useState<{ requestId: string; tool: string; params: Record<string, unknown>; riskLevel: 'low' | 'medium' | 'high'; reason?: string } | null>(null)
   // 审批偏好设置弹窗状态
   const [showApprovalPreferences, setShowApprovalPreferences] = useState(false)
 
@@ -1371,8 +1371,8 @@ Is there something specific you'd like to know or modify about this project?`
               }}
               width="100%"
             >
-              {/* @ts-ignore - react-window types issue */}
-              {({ index, style }: { index: number; style: React.CSSProperties }) => {
+              {(props: { index: number; style: React.CSSProperties }) => {
+                const { index, style } = props
                 const msg = currentConversation?.messages[index]
                 if (!msg) return null
 

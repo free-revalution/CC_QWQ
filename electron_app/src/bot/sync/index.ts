@@ -8,6 +8,8 @@
 import type { BotMessage } from '../../types/bot';
 import { botManager } from '../index';
 import { whatsappIntegration, feishuIntegration } from '../integration/claude';
+import { ipc } from '../../lib/ipc';
+import type { Message } from '../types/messages';
 
 export interface SyncConfig {
   /** Sync interval in milliseconds (0 for event-only) */
@@ -105,7 +107,6 @@ export class BotStateSync {
     this.state.forEach((_, platform) => this.stop(platform));
 
     if (this.streamCleanupId) {
-      const { ipc } = require('../../lib/ipc');
       ipc.removeListener(this.streamCleanupId);
       this.streamCleanupId = null;
     }
@@ -115,8 +116,6 @@ export class BotStateSync {
    * Set up Claude stream listener for real-time sync
    */
   private setupStreamListener(): void {
-    const { ipc } = require('../../lib/ipc');
-
     this.streamCleanupId = ipc.onClaudeStream((data: {
       conversationId: string;
       messageId: string;
@@ -186,12 +185,13 @@ export class BotStateSync {
       case 'text':
         return `🤖 ${data.content}`;
 
-      case 'tool_use':
+      case 'tool_use': {
         let toolMsg = `🔧 工具调用: ${data.toolName}`;
         if (data.toolInput && data.toolInput.length < 200) {
           toolMsg += `\n${data.toolInput}`;
         }
         return toolMsg;
+      }
 
       case 'tool_result':
         return `✅ 工具完成`;
@@ -254,7 +254,7 @@ export class BotStateSync {
   /**
    * Format message for chat display
    */
-  private formatMessageForChat(msg: any): string | null {
+  private formatMessageForChat(msg: Message): string | null {
     switch (msg.kind) {
       case 'user-text':
         return `👤 ${msg.content}`;
@@ -268,13 +268,14 @@ export class BotStateSync {
       case 'tool-result':
         return `✅ 完成: ${msg.toolName}`;
 
-      case 'permission':
+      case 'permission': {
         const perm = msg.permission;
         let permText = `🔔 权限请求\n工具: ${perm.toolName}`;
         if (perm.status === 'pending') {
           permText += '\n回复 /approve 或 /deny';
         }
         return permText;
+      }
 
       case 'error':
         return `❌ 错误: ${msg.error.message}`;
