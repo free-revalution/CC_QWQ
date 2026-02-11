@@ -6,7 +6,7 @@
 
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import type { Checkpoint, FileSnapshot, RollbackResult, RollbackPreview } from '../src/types/operation.js'
+import type { RollbackResult, RollbackPreview } from '../src/types/operation.js'
 import type { CheckpointManager } from './checkpointManager.js'
 import type { OperationExecutor } from './operationExecutor.js'
 
