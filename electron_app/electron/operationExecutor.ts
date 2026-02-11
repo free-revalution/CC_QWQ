@@ -8,18 +8,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { spawn } from 'child_process'
 import { createHash } from 'crypto'
-import type { ToolPermissionConfig } from '../src/types/operation.js'
-
-// 文件快照存储
-interface FileSnapshot {
-  id: string
-  type: 'file'
-  filePath: string
-  content: string | null
-  hash: string
-  timestamp: number
-  size: number
-}
+import type { ToolPermissionConfig, FileSnapshot } from '../src/types/operation.js'
 
 // 执行结果
 interface ExecutionResult {
@@ -30,6 +19,7 @@ interface ExecutionResult {
 }
 
 export class OperationExecutor {
+  // File snapshots stored by ID (the Map key serves as the snapshot ID)
   private snapshots: Map<string, FileSnapshot> = new Map()
 
   constructor(
