@@ -6,6 +6,7 @@ import pkg from 'node-pty'
 import type { IPty } from 'node-pty'
 import { OperationLogger } from './operationLogger.js'
 import { ApprovalEngine } from './approvalEngine.js'
+import { OperationExecutor } from './operationExecutor.js'
 import { MCPProxyServer } from './mcpProxyServer.js'
 import type { LogFilter } from '../src/types/operation.js'
 
@@ -3000,6 +3001,25 @@ ipcMain.handle('export-logs', async (_event, format: 'json' | 'text' = 'json') =
 
 // ==================== 审批引擎 IPC ====================
 
+// 订阅审批请求
+ipcMain.on('subscribe-to-approvals', (event) => {
+  console.log('[IPC] Client subscribed to approvals')
+
+  const unsubscribe = approvalEngine.onApprovalRequest((request) => {
+    if (!event.sender.isDestroyed()) {
+      event.sender.send('approval-request', request)
+    }
+  })
+
+  const cleanup = () => {
+    unsubscribe()
+    console.log('[IPC] Client unsubscribed from approvals')
+  }
+
+  event.sender.once('destroyed', cleanup)
+  event.sender.once('disconnect', cleanup)
+})
+
 // 处理用户审批响应
 ipcMain.on('approval-response', (event, data) => {
   console.log('[IPC] approval-response:', data)
@@ -3044,10 +3064,16 @@ app.on('ready', async () => {
   // 启动 MCP 代理服务器
   const MCP_PROXY_PORT = 3010
   try {
+    // 操作执行器
+    const operationExecutor = new OperationExecutor(
+      (tool: string) => approvalEngine.getToolConfig(tool)
+    )
+
     const mcpProxyServer = new MCPProxyServer(
       MCP_PROXY_PORT,
       approvalEngine,
-      operationLogger
+      operationLogger,
+      operationExecutor
     )
     await mcpProxyServer.start()
     console.log('[Main] MCP Proxy Server started successfully')
