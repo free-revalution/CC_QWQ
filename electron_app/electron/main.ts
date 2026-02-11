@@ -8,6 +8,7 @@ import { OperationLogger } from './operationLogger.js'
 import { ApprovalEngine } from './approvalEngine.js'
 import { OperationExecutor } from './operationExecutor.js'
 import { MCPProxyServer } from './mcpProxyServer.js'
+import { getBrowserManager } from './browserManager.js'
 import type { LogFilter } from '../src/types/operation.js'
 
 const { spawn: spawnPty } = pkg
@@ -3083,6 +3084,13 @@ app.on('ready', async () => {
   } catch (error) {
     console.error('[Main] Failed to start MCP Proxy Server:', error)
   }
+  // Initialize browser manager
+  try {
+    await getBrowserManager().initialize()
+    console.log('[Main] Browser manager initialized')
+  } catch (error) {
+    console.error('[Main] Failed to initialize browser manager:', error)
+  }
 })
 
 app.on('window-all-closed', () => {
@@ -3106,5 +3114,12 @@ app.on('before-quit', async () => {
   // 停止 MCP 代理服务器
   if ((global as any).mcpProxyServer) {
     await (global as any).mcpProxyServer.stop()
+  }
+  // Close browser manager before quitting
+  try {
+    await getBrowserManager().close()
+    console.log('[Main] Browser manager closed')
+  } catch (error) {
+    console.error('[Main] Failed to close browser manager:', error)
   }
 })
