@@ -206,7 +206,6 @@ export class OperationExecutor {
 
       // 自动创建检查点
       checkpoint = this.checkpointManager.createAuto(filePath, snapshotId)
-      console.log(`[Checkpoint] Created: ${checkpoint.name} (${checkpoint.id})`)
 
       try {
         // 写入文件
