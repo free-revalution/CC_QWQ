@@ -579,6 +579,78 @@ export const ipc: ElectronAPI = {
     }
   },
 
+  // ==================== 检查点管理 ====================
+
+  /**
+   * 列出所有检查点
+   */
+  checkpointList: async () => {
+    if (window.electronAPI?.checkpointList) {
+      return window.electronAPI.checkpointList()
+    }
+    console.warn('electronAPI.checkpointList not available')
+    return []
+  },
+
+  /**
+   * 获取单个检查点
+   */
+  checkpointGet: async (id: string) => {
+    if (window.electronAPI?.checkpointGet) {
+      return window.electronAPI.checkpointGet(id)
+    }
+    console.warn('electronAPI.checkpointGet not available')
+    return null
+  },
+
+  /**
+   * 手动创建检查点
+   */
+  checkpointCreate: async (name: string, description: string) => {
+    if (window.electronAPI?.checkpointCreate) {
+      return window.electronAPI.checkpointCreate(name, description)
+    }
+    console.warn('electronAPI.checkpointCreate not available')
+    return null
+  },
+
+  // ==================== 回滚引擎 ====================
+
+  /**
+   * 预览回滚
+   */
+  rollbackPreview: async (checkpointId: string) => {
+    if (window.electronAPI?.rollbackPreview) {
+      return window.electronAPI.rollbackPreview(checkpointId)
+    }
+    console.warn('electronAPI.rollbackPreview not available')
+    return { files: [], canRollback: false, warnings: ['API not available'] }
+  },
+
+  /**
+   * 执行回滚
+   */
+  rollbackExecute: async (checkpointId: string) => {
+    if (window.electronAPI?.rollbackExecute) {
+      return window.electronAPI.rollbackExecute(checkpointId)
+    }
+    console.warn('electronAPI.rollbackExecute not available')
+    return { success: false, error: 'API not available' }
+  },
+
+  // ==================== 日志导出 ====================
+
+  /**
+   * 导出日志（支持 CSV 和 Markdown）
+   */
+  exportLogsV2: async (options: { format: 'json' | 'csv' | 'markdown', timeRange?: { start: number; end: number } }) => {
+    if (window.electronAPI?.exportLogsV2) {
+      return window.electronAPI.exportLogsV2(options)
+    }
+    console.warn('electronAPI.exportLogsV2 not available')
+    return { success: false, error: 'API not available', content: '' }
+  },
+
   /**
    * 平台信息
    */
