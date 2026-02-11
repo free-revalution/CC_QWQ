@@ -9,6 +9,7 @@ import * as path from 'path'
 import { spawn } from 'child_process'
 import { createHash } from 'crypto'
 import type { ToolPermissionConfig, FileSnapshot } from '../src/types/operation.js'
+import type { CheckpointManager } from './checkpointManager.js'
 
 /**
  * Convert glob pattern to RegExp
@@ -47,7 +48,8 @@ export class OperationExecutor {
   private snapshots: Map<string, FileSnapshot> = new Map()
 
   constructor(
-    private getToolPermission: (tool: string) => ToolPermissionConfig | undefined
+    private getToolPermission: (tool: string) => ToolPermissionConfig | undefined,
+    private checkpointManager: CheckpointManager
   ) {}
 
   /**
@@ -171,6 +173,9 @@ export class OperationExecutor {
    * 写入文件（支持回滚）
    */
   async writeFile(filePath: string, content: string): Promise<ExecutionResult> {
+    // 声明 checkpoint 变量，以便在 catch 块中访问
+    let checkpoint: ReturnType<CheckpointManager['createAuto']> | undefined
+
     try {
       // 获取权限配置
       const permission = this.getToolPermission('sandbox_write_file')
@@ -199,6 +204,10 @@ export class OperationExecutor {
       // 创建快照
       const snapshotId = await this.createSnapshot(filePath)
 
+      // 自动创建检查点
+      checkpoint = this.checkpointManager.createAuto(filePath, snapshotId)
+      console.log(`[Checkpoint] Created: ${checkpoint.name} (${checkpoint.id})`)
+
       try {
         // 写入文件
         await fs.writeFile(filePath, content, 'utf-8')
@@ -211,8 +220,11 @@ export class OperationExecutor {
           }
         }
       } catch (writeError) {
-        // 写入失败，清理快照
+        // 写入失败，清理快照和检查点
         this.snapshots.delete(snapshotId)
+        if (checkpoint) {
+          this.checkpointManager.delete(checkpoint.id)
+        }
         throw writeError
       }
     } catch (error) {
