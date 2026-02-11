@@ -54,8 +54,35 @@ export class OperationExecutor {
    * 读取文件（沙盒限制）
    */
   async readFile(filePath: string): Promise<ExecutionResult> {
-    // 实现将在后续步骤完成
-    return { success: false, error: 'Not implemented' }
+    try {
+      // 获取权限配置
+      const permission = this.getToolPermission('sandbox_read_file')
+
+      if (!permission?.sandboxConstraints?.allowedPaths) {
+        return { success: false, error: 'No sandbox constraints configured for file reading' }
+      }
+
+      // 验证路径
+      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths)) {
+        return { success: false, error: `Access denied: path not in allowed sandbox` }
+      }
+
+      // 读取文件
+      const content = await fs.readFile(filePath, 'utf-8')
+
+      return {
+        success: true,
+        data: { content }
+      }
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException
+      if (err.code === 'ENOENT') {
+        return { success: false, error: `File not found: ${filePath}` }
+      } else if (err.code === 'EACCES') {
+        return { success: false, error: `Permission denied: ${filePath}` }
+      }
+      return { success: false, error: `Failed to read file: ${err.message}` }
+    }
   }
 
   /**
