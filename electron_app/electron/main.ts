@@ -3013,6 +3013,11 @@ ipcMain.handle('export-logs', async (_event, format: 'json' | 'text' = 'json') =
 
 // 列出所有检查点
 ipcMain.handle('checkpoint-list', async () => {
+  console.log('[IPC] checkpoint-list called')
+  if (!checkpointManager) {
+    console.error('[Checkpoint] Manager not initialized')
+    return []
+  }
   try {
     const checkpoints = checkpointManager.list()
     // 转换 Map 为普通对象以便序列化
@@ -3028,6 +3033,11 @@ ipcMain.handle('checkpoint-list', async () => {
 
 // 获取单个检查点
 ipcMain.handle('checkpoint-get', async (_event, id: string) => {
+  console.log('[IPC] checkpoint-get called, id:', id)
+  if (!checkpointManager) {
+    console.error('[Checkpoint] Manager not initialized')
+    return null
+  }
   try {
     const checkpoint = checkpointManager.get(id)
     if (!checkpoint) return null
@@ -3043,6 +3053,11 @@ ipcMain.handle('checkpoint-get', async (_event, id: string) => {
 
 // 手动创建检查点
 ipcMain.handle('checkpoint-create', async (_event, name: string, description: string) => {
+  console.log('[IPC] checkpoint-create called, name:', name, 'description:', description)
+  if (!checkpointManager) {
+    console.error('[Checkpoint] Manager not initialized')
+    return null
+  }
   try {
     const checkpoint = checkpointManager.createManual(name, description, new Map())
     return {
@@ -3059,6 +3074,11 @@ ipcMain.handle('checkpoint-create', async (_event, name: string, description: st
 
 // 预览回滚
 ipcMain.handle('rollback-preview', async (_event, checkpointId: string) => {
+  console.log('[IPC] rollback-preview called, checkpointId:', checkpointId)
+  if (!rollbackEngine) {
+    console.error('[Rollback] Engine not initialized')
+    return { files: [], canRollback: false, warnings: ['Rollback engine not initialized'] }
+  }
   try {
     const preview = rollbackEngine.previewRollback(checkpointId)
     return preview
@@ -3070,6 +3090,11 @@ ipcMain.handle('rollback-preview', async (_event, checkpointId: string) => {
 
 // 执行回滚
 ipcMain.handle('rollback-execute', async (_event, checkpointId: string) => {
+  console.log('[IPC] rollback-execute called, checkpointId:', checkpointId)
+  if (!rollbackEngine) {
+    console.error('[Rollback] Engine not initialized')
+    return { success: false, error: 'Rollback engine not initialized' }
+  }
   try {
     const result = await rollbackEngine.rollbackTo(checkpointId)
 
@@ -3090,14 +3115,15 @@ ipcMain.handle('rollback-execute', async (_event, checkpointId: string) => {
 
 // 导出日志（新版本，支持 CSV 和 Markdown）
 ipcMain.handle('export-logs-v2', async (_event, options: { format: 'json' | 'csv' | 'markdown', timeRange?: { start: number; end: number } }) => {
+  console.log('[IPC] export-logs-v2 called, format:', options.format)
   try {
     const logs = operationLogger.getLogs()
     const exporter = new LogExporter()
     const content = exporter.export(logs, options)
-    return content
+    return { success: true, content }
   } catch (error) {
     console.error('[Export] Error:', error)
-    throw error
+    return { success: false, error: (error as Error).message, content: '' }
   }
 })
 
