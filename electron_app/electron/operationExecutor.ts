@@ -10,6 +10,25 @@ import { spawn } from 'child_process'
 import { createHash } from 'crypto'
 import type { ToolPermissionConfig, FileSnapshot } from '../src/types/operation.js'
 
+// 简单的 glob 匹配实现
+function matchesPattern(value: string, pattern: string): boolean {
+  const regex = pattern
+    .replace(/\*\*/g, '.*')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+  return new RegExp(regex).test(value)
+}
+
+function matchesAnyPattern(value: string, patterns: string[]): boolean {
+  return patterns.some(pattern => {
+    if (pattern.startsWith('!')) {
+      const regex = pattern.substring(1).replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*')
+      return !new RegExp(regex).test(value)
+    }
+    return matchesPattern(value, pattern)
+  })
+}
+
 // 执行结果
 interface ExecutionResult {
   success: boolean
@@ -62,8 +81,11 @@ export class OperationExecutor {
    * 验证路径是否在沙盒允许范围内
    */
   private validatePath(filePath: string, allowedPaths: string[]): boolean {
-    // 实现将在后续步骤完成
-    return false
+    // 规范化路径
+    const normalizedPath = path.normalize(filePath)
+
+    // 检查是否匹配任何允许的模式
+    return matchesAnyPattern(normalizedPath, allowedPaths)
   }
 
   /**
