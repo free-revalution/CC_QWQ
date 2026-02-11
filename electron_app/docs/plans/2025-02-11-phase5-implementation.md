@@ -999,7 +999,7 @@ export interface ElectronAPI {
   exportLogsV2: (options: {
     format: 'json' | 'csv' | 'markdown'
     timeRange?: { start: number; end: number }
-  }) => Promise<string>
+  }) => Promise<{ success: boolean; content?: string; error?: string }>
 }
 ```
 
@@ -1091,7 +1091,7 @@ git commit -m "feat: add checkpoint, rollback, export to ElectronAPI types"
       return window.electronAPI.exportLogsV2(options)
     }
     console.warn('electronAPI.exportLogsV2 not available')
-    return ''
+    return { success: false, error: 'API not available', content: '' }
   },
 ```
 
