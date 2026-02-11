@@ -362,11 +362,26 @@ export class MCPProxyServer extends EventEmitter {
         }
 
       case 'system_exec':
-        return {
-          content: [{
-            type: 'text',
-            text: `Executed: ${args.command as string} (not yet implemented)`
-          }]
+        const execResult = await this.operationExecutor.executeCommand(args.command as string)
+        if (execResult.success) {
+          const data = execResult.data
+          let output = `Exit code: ${data.exitCode}\n`
+          if (data.stdout) output += `Output:\n${data.stdout}\n`
+          if (data.stderr) output += `Errors:\n${data.stderr}`
+          return {
+            content: [{
+              type: 'text',
+              text: output.trim()
+            }]
+          }
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: execResult.error || 'Failed to execute command'
+            }],
+            isError: true
+          }
         }
 
       default:
