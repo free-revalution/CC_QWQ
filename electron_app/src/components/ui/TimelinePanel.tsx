@@ -8,7 +8,7 @@ import './TimelinePanel.css'
 import { useState, useEffect, useMemo } from 'react'
 import { Clock, CheckCircle, XCircle, AlertCircle, Hourglass, ChevronDown, ChevronRight } from 'lucide-react'
 import { ipc } from '../../lib/ipc'
-import type { LogEntry } from '../../types/operation'
+import type { LogEntry, OperationStatus } from '../../types/operation'
 
 interface TimelinePanelProps {
   className?: string
@@ -18,7 +18,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ className = '' }) 
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [filter, setFilter] = useState<{
-    status?: string[]
+    status?: OperationStatus[]
     tool?: string[]
   }>({})
 
@@ -139,7 +139,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ className = '' }) 
                   <div className="timeline-item-message">{entry.title}</div>
                   {entry.details && (
                     <div className="timeline-item-details">
-                      {summarizeParams(entry.details)}
+                      {String(summarizeParams(entry.details))}
                     </div>
                   )}
                   {entry.duration && (
