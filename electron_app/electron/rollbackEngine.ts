@@ -5,6 +5,7 @@
  */
 
 import * as fs from 'fs/promises'
+import * as path from 'path'
 import type { Checkpoint, FileSnapshot, RollbackResult, RollbackPreview } from '../src/types/operation.js'
 import type { CheckpointManager } from './checkpointManager.js'
 
@@ -18,6 +19,7 @@ export class RollbackEngine {
    * 回滚到指定检查点
    */
   async rollbackTo(checkpointId: string): Promise<RollbackResult> {
+    console.log(`[RollbackEngine] Rolling back to checkpoint: ${checkpointId}`)
     const checkpoint = this.checkpointManager.get(checkpointId)
 
     if (!checkpoint) {
@@ -43,6 +45,8 @@ export class RollbackEngine {
     }
 
     const allSuccess = results.every(r => r.success)
+    console.log(`[RollbackEngine] Rolled back ${results.length} files`)
+    console.log(`[RollbackEngine] Rollback completed: ${allSuccess ? 'success' : 'partial failure'}`)
 
     return {
       success: allSuccess,
@@ -68,9 +72,10 @@ export class RollbackEngine {
     try {
       if (snapshot.content === '') {
         // 文件原本不存在，删除它
-        await fs.unlink(filePath)
+        await fs.rm(filePath, { force: true })
       } else {
         // 恢复文件内容
+        await fs.mkdir(path.dirname(filePath), { recursive: true })
         await fs.writeFile(filePath, snapshot.content, 'utf-8')
       }
 
