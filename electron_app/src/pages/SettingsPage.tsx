@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'
-import { ArrowLeft, Copy, Check, Sparkles, QrCode, RefreshCw } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { ArrowLeft, Copy, Check, Sparkles, QrCode, RefreshCw, MessageSquare } from 'lucide-react'
 import QRCode from 'qrcode'
 import Card from '../components/ui/Card'
+import BotSettings from '../components/ui/BotSettings'
+import ConversationDrawer from '../components/mobile/ConversationDrawer'
 import { ipc } from '../lib/ipc'
-import type { Settings } from '../types'
+import type { Settings, MobileConversation } from '../types'
 
 // 响应式断点
 const BREAKPOINTS = {
@@ -58,6 +60,11 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
   const [connectionInfo, setConnectionInfo] = useState<{ ip: string; port: number; hasPassword: boolean } | null>(null)
   const [qrCodeData, setQrCodeData] = useState<string>('')
   const [qrLoading, setQrLoading] = useState(false)
+
+  // 移动端对话抽屉状态
+  const [showConversationDrawer, setShowConversationDrawer] = useState(false)
+  const [mobileConversations, setMobileConversations] = useState<MobileConversation[]>([])
+  const [selectedMobileConversationId, setSelectedMobileConversationId] = useState<string | null>(null)
 
   useEffect(() => {
     const loadConnectionInfo = async () => {
@@ -120,6 +127,26 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
       setQrLoading(false)
     }
   }
+
+  // 加载移动端对话列表
+  const loadMobileConversations = useCallback(async () => {
+    try {
+      const result = await ipc.getConversationList()
+      if (result.success && result.conversations) {
+        setMobileConversations(result.conversations)
+        console.log('[Mobile] Loaded', result.conversations.length, 'conversations')
+      }
+    } catch (error) {
+      console.error('[Mobile] Failed to load conversations:', error)
+    }
+  }, [])
+
+  // 定期刷新对话列表
+  useEffect(() => {
+    loadMobileConversations()
+    const interval = setInterval(loadMobileConversations, 5000)
+    return () => clearInterval(interval)
+  }, [loadMobileConversations])
 
   // 当连接信息变化时重新生成二维码
   useEffect(() => {
@@ -426,6 +453,90 @@ export default function SettingsPage({ onBack }: SettingsPageProps) {
               </div>
             </Card>
 
+            {/* Bot Settings Card */}
+            <BotSettings />
+
+            {/* 移动端对话列表卡片 */}
+            <Card className="p-4 sm:p-6 md:p-8 relative overflow-hidden group">
+              {/* 背景装饰 */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-purple-500/10 to-blue-500/10 rounded-full blur-2xl" />
+
+              <div className="relative z-10">
+                <div className="flex items-center justify-between mb-4 sm:mb-6">
+                  <div className="flex items-center gap-2 sm:gap-3">
+                    <div className="p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-blue-500/20">
+                      <MessageSquare size={18} className="text-purple-500 sm:size-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm sm:text-base font-semibold text-primary">Mobile Conversations</h3>
+                      <p className="text-xs sm:text-sm text-secondary">
+                        {mobileConversations.length} conversation{mobileConversations.length !== 1 ? 's' : ''} available
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowConversationDrawer(true)}
+                    className="px-3 sm:px-4 py-2 sm:py-2.5 glass-button text-xs sm:text-sm font-medium"
+                  >
+                    View List
+                  </button>
+                </div>
+
+                {mobileConversations.length === 0 ? (
+                  <div className="text-center py-6 sm:py-8 text-secondary text-xs sm:text-sm">
+                    No conversations available. Start a conversation on your mobile device.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {mobileConversations.slice(0, 3).map(conv => (
+                      <div
+                        key={conv.id}
+                        className={`p-3 rounded-lg border transition-all ${
+                          selectedMobileConversationId === conv.id
+                            ? 'bg-blue-500/20 border-blue-500/30'
+                            : 'bg-white/5 border-white/10 hover:bg-white/10'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className={`w-2 h-1.5 rounded-full ${
+                            conv.status === 'ready' ? 'bg-green-500' :
+                            conv.status === 'initializing' ? 'bg-yellow-500 animate-pulse' :
+                            'bg-gray-500'
+                          }`} />
+                          <span className="text-xs sm:text-sm font-medium text-primary truncate">
+                            {conv.title}
+                          </span>
+                        </div>
+                        {conv.lastMessage && (
+                          <p className="text-xs text-secondary truncate pl-3.5">
+                            {conv.lastMessage}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                    {mobileConversations.length > 3 && (
+                      <div className="text-center pt-2">
+                        <button
+                          onClick={() => setShowConversationDrawer(true)}
+                          className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
+                        >
+                          View {mobileConversations.length - 3} more conversation{mobileConversations.length - 3 !== 1 ? 's' : ''} →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Card>
+
+            {/* Conversation Drawer */}
+            <ConversationDrawer
+              isOpen={showConversationDrawer}
+              onClose={() => setShowConversationDrawer(false)}
+              conversations={mobileConversations}
+              selectedConversationId={selectedMobileConversationId}
+              onSelectConversation={(id) => setSelectedMobileConversationId(id)}
+            />
 
           </div>
         </div>

@@ -477,3 +477,184 @@
   margin-top: 0.375rem;
   border: 1px solid rgba(0, 0, 0, 0.05);
 }
+
+/* ========================================
+   审批相关样式 (Approval Styles)
+   ======================================== */
+
+/* 日志统计样式 */
+.log-title-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.log-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 0.5rem;
+}
+
+.stat-item {
+  font-size: 0.75rem;
+  color: #86868B;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.stat-item strong {
+  color: #1D1D1F;
+  font-weight: 600;
+}
+
+.stat-info {
+  color: #007AFF !important;
+  background: rgba(0, 122, 255, 0.1) !important;
+}
+
+.stat-success {
+  color: #34C759 !important;
+  background: rgba(52, 199, 89, 0.1) !important;
+}
+
+.stat-warning {
+  color: #FF9500 !important;
+  background: rgba(255, 149, 0, 0.1) !important;
+}
+
+.stat-error {
+  color: #FF3B30 !important;
+  background: rgba(255, 59, 48, 0.1) !important;
+}
+
+/* 自动滚动切换按钮 */
+.auto-scroll-toggle {
+  font-size: 0.75rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 0.375rem;
+  background: rgba(0, 0, 0, 0.05);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  color: #86868B;
+  transition: all 0.2s ease;
+}
+
+.auto-scroll-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.auto-scroll-toggle.active {
+  background: rgba(52, 199, 89, 0.15);
+  border-color: rgba(52, 199, 89, 0.3);
+  color: #34C759;
+}
+
+/* 日志状态指示器 */
+.log-status {
+  font-size: 0.75rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+
+.status-pending {
+  background: rgba(142, 142, 147, 0.15);
+  color: #8E8E93;
+}
+
+.status-awaiting {
+  background: rgba(0, 122, 255, 0.15);
+  color: #007AFF;
+  animation: pulse-blue 2s ease-in-out infinite;
+}
+
+.status-running {
+  background: rgba(255, 149, 0, 0.15);
+  color: #FF9500;
+}
+
+.status-completed {
+  background: rgba(52, 199, 89, 0.15);
+  color: #34C759;
+}
+
+.status-failed {
+  background: rgba(255, 59, 48, 0.15);
+  color: #FF3B30;
+}
+
+.status-denied {
+  background: rgba(214, 50, 50, 0.15);
+  color: #D63232;
+}
+
+@keyframes pulse-blue {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.log-duration {
+  font-size: 0.7rem;
+  color: #86868B;
+  margin-top: 0.25rem;
+  font-family: monospace;
+}
+
+/* 审批弹窗风险等级边框 */
+.risk-low {
+  border-left-color: #34C759 !important;
+}
+
+.risk-medium {
+  border-left-color: #FF9500 !important;
+}
+
+.risk-high {
+  border-left-color: #FF3B30 !important;
+}
+
+/* 审批偏好设置开关 */
+.toggle-switch {
+  position: relative;
+  width: 3rem;
+  height: 1.5rem;
+  border-radius: 0.75rem;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
+}
+
+.toggle-switch.active {
+  background-color: #007AFF;
+}
+
+.toggle-switch:not(.active) {
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch.active::after {
+  transform: translateX(1.5rem);
+}
+
+.toggle-switch:not(.active)::after {
+  transform: translateX(0.125rem);
+}

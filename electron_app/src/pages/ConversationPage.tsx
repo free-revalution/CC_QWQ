@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle, FileText } from 'lucide-react'
+import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle, FileText, Shield } from 'lucide-react'
 import { List } from 'react-window'
 import Card from '../components/ui/Card'
 import MessageContent from '../components/ui/MessageContent'
@@ -10,6 +10,8 @@ import GitStatusPanel from '../components/ui/GitStatusPanel'
 import FileSearchPanel from '../components/ui/FileSearchPanel'
 import { OperationLogPanel } from '../components/ui/OperationLogPanel'
 import ActivityIndicator, { ActivityDot } from '../components/ui/ActivityIndicator'
+import { ApprovalDialog } from '../components/ui/ApprovalDialog'
+import { ApprovalPreferences } from '../components/ui/ApprovalPreferences'
 import { ipc } from '../lib/ipc'
 import {
   loadConversations,
@@ -20,8 +22,6 @@ import {
   setCurrentConversationId as saveCurrentConversationId,
 } from '../lib/storage'
 import type { Message, Conversation } from '../types'
-// Happy 架构改进类型
-import type { ActivityUpdate } from '../types/message'
 
 // 过滤模式类型
 export type FilterMode = 'talk' | 'develop'
@@ -78,6 +78,10 @@ export default function ConversationPage({
   const [trustRequest, setTrustRequest] = useState<{ conversationId: string; projectPath: string; message: string } | null>(null)
   // 权限弹窗状态
   const [permissionRequest, setPermissionRequest] = useState<{ conversationId: string; projectPath: string; toolName: string; details: string } | null>(null)
+  // 审批弹窗状态（Controlled AI Operations）
+  const [approvalRequest, setApprovalRequest] = useState<{ requestId: string; tool: string; params: any; riskLevel: 'low' | 'medium' | 'high'; reason?: string } | null>(null)
+  // 审批偏好设置弹窗状态
+  const [showApprovalPreferences, setShowApprovalPreferences] = useState(false)
 
   // 模型设置弹窗状态
   const [showModelSettings, setShowModelSettings] = useState(false)
@@ -234,6 +238,19 @@ export default function ConversationPage({
     const cleanupId = ipc.onPermissionRequest((data) => {
       console.log('Received permission request from main process:', data)
       setPermissionRequest(data)
+    })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [])
+
+  // 监听来自主进程的审批请求（Controlled AI Operations）
+  useEffect(() => {
+    const cleanupId = ipc.onApprovalRequest((data) => {
+      console.log('Received approval request from main process:', data)
+      setApprovalRequest(data)
     })
     return () => {
       if (cleanupId) {
@@ -731,6 +748,18 @@ Is there something specific you'd like to know or modify about this project?`
 
     // 关闭弹窗
     setTrustRequest(null)
+  }
+
+  // 处理审批响应（Controlled AI Operations）
+  const handleApprovalResponse = async (requestId: string, choice: 'approve' | 'deny', remember: 'once' | 'always') => {
+    console.log('Approval response:', { requestId, choice, remember })
+
+    // 将审批结果发送回给 ApprovalEngine（通过 IPC）
+    ipc.sendApprovalResponse({ requestId, choice, remember })
+    console.log('Approval response sent to ApprovalEngine:', { requestId, choice, remember })
+
+    // 关闭弹窗
+    setApprovalRequest(null)
   }
 
   // 处理输入变化，检测 # 和 /
@@ -1289,6 +1318,13 @@ Is there something specific you'd like to know or modify about this project?`
             <FileText size={16} />
           </button>
           <button
+            onClick={() => setShowApprovalPreferences(true)}
+            className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all"
+            title="Approval Preferences"
+          >
+            <Shield size={16} />
+          </button>
+          <button
             onClick={onOpenSettings}
             className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all"
             title="Settings"
@@ -1712,6 +1748,19 @@ Is there something specific you'd like to know or modify about this project?`
       {/* 模型设置弹窗 */}
       {showModelSettings && (
         <ModelSettings onClose={() => setShowModelSettings(false)} />
+      )}
+
+      {/* 审批请求弹窗（Controlled AI Operations） */}
+      <ApprovalDialog
+        isOpen={!!approvalRequest}
+        request={approvalRequest}
+        onRespond={handleApprovalResponse}
+        onClose={() => setApprovalRequest(null)}
+      />
+
+      {/* 审批偏好设置弹窗 */}
+      {showApprovalPreferences && (
+        <ApprovalPreferences onClose={() => setShowApprovalPreferences(false)} />
       )}
 
       {/* Git 状态面板 */}

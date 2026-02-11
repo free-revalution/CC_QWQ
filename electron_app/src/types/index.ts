@@ -23,7 +23,7 @@ export interface Settings {
 /**
  * 页面类型
  */
-export type PageType = 'open' | 'conversation' | 'settings'
+export type PageType = 'open' | 'conversation' | 'settings' // 文件打开页/对话页面/设置页面
 
 /**
  * 过滤模式
@@ -220,6 +220,15 @@ export interface ElectronAPI {
 
   /** 清除记住的选择 */
   clearRememberedChoices: () => Promise<{ success: boolean }>
+
+  /** 订阅审批请求 */
+  onApprovalRequest: (callback: (data: {
+    requestId: string
+    tool: string
+    params: any
+    riskLevel: 'low' | 'medium' | 'high'
+    reason?: string
+  }) => void) => string
 }
 
 /**
@@ -363,7 +372,7 @@ export type {
   ToolCallState,
   ToolPermission, // This is the runtime permission status from message.ts
   // Messages
-  Message,
+  Message as HappyMessage,
   MessageKind,
   UserTextMessage,
   AgentTextMessage,

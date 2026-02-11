@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Claude Mobile - 测试客户端</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      color: #e4e4e7;
+      padding: 16px;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      padding: 20px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 20px;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      margin-bottom: 16px;
+    }
+
+    .status.connected {
+      background: rgba(34, 197, 94, 0.2);
+      color: #22c55e;
+    }
+
+    .status.disconnected {
+      background: rgba(239, 68, 68, 0.2);
+      color: #ef4444;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .status.connected .status-dot {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .card {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .card h3 {
+      font-size: 16px;
+      margin-bottom: 12px;
+      color: #a1a1aa;
+    }
+
+    .input-group {
+      margin-bottom: 12px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      color: #a1a1aa;
+      margin-bottom: 4px;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: #e4e4e7;
+      font-size: 14px;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .conversation-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .conversation-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .conversation-item:active {
+      transform: scale(0.98);
+    }
+
+    .conversation-item.selected {
+      background: rgba(102, 126, 234, 0.2);
+      border-color: #667eea;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-indicator.ready {
+      background: #22c55e;
+    }
+
+    .status-indicator.initializing {
+      background: #eab308;
+      animation: pulse 1s infinite;
+    }
+
+    .status-indicator.not_started {
+      background: #6b7280;
+    }
+
+    /* Happy 架构改进 - 活动状态指示点 */
+    .activity-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .activity-dot.thinking {
+      background: #3b82f6;
+      animation: pulse 1s infinite;
+    }
+
+    .activity-dot.active {
+      background: #22c55e;
+    }
+
+    .activity-status {
+      font-size: 11px;
+      color: #a1a1aa;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .activity-status.thinking {
+      color: #3b82f6;
+    }
+
+    .activity-status.active {
+      color: #22c55e;
+    }
+
+    .conversation-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .conversation-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e4e4e7;
+      margin-bottom: 2px;
+    }
+
+    .conversation-preview {
+      font-size: 12px;
+      color: #a1a1aa;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .messages {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .message {
+      max-width: 80%;
+      padding: 10px 14px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant {
+      align-self: flex-start;
+      background: rgba(255,255,255,0.1);
+      color: #e4e4e7;
+      border-bottom-left-radius: 4px;
+    }
+
+    .message-input {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .message-input textarea {
+      flex: 1;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      color: #e4e4e7;
+      font-size: 14px;
+      font-family: inherit;
+      resize: none;
+      min-height: 40px;
+      max-height: 100px;
+    }
+
+    .message-input textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .send-btn {
+      width: 44px;
+      height: 44px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .send-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #a1a1aa;
+    }
+
+    .empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: #a1a1aa;
+    }
+
+    .back-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 0;
+      margin-bottom: 16px;
+      color: #667eea;
+      background: none;
+      border: none;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .code-block {
+      background: rgba(0,0,0,0.3);
+      padding: 12px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      overflow-x: auto;
+      margin: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 连接页面 -->
+    <div id="connectPage">
+      <div class="header">
+        <h1>Claude Mobile</h1>
+        <div id="connectionStatus" class="status disconnected">
+          <span class="status-dot"></span>
+          <span>未连接</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>🔗 连接到桌面端</h3>
+        <div class="input-group">
+          <label>桌面端 IP 地址</label>
+          <input type="text" id="serverIp" placeholder="例如: 192.168.1.100" value="">
+        </div>
+        <div class="input-group">
+          <label>端口</label>
+          <input type="number" id="serverPort" placeholder="默认: 3000" value="3000">
+        </div>
+        <div class="input-group">
+          <label>连接密码（可选）</label>
+          <input type="password" id="serverPassword" placeholder="如果设置了密码">
+        </div>
+        <button class="btn btn-primary" id="connectBtn" onclick="connect()">
+          连接
+        </button>
+      </div>
+
+      <div class="card">
+        <h3>📖 使用说明</h3>
+        <p style="font-size: 13px; color: #a1a1aa; line-height: 1.6;">
+          1. 确保手机和电脑在同一局域网<br>
+          2. 在桌面端应用中查看 IP 地址<br>
+          3. 输入 IP 地址并点击连接<br>
+          4. 连接成功后选择对话开始聊天
+        </p>
+      </div>
+    </div>
+
+    <!-- 对话列表页面 -->
+    <div id="conversationsPage" class="hidden">
+      <button class="back-btn" onclick="showConnectPage()">
+        ← 返回
+      </button>
+      <div class="header">
+        <h1>选择对话</h1>
+      </div>
+      <div id="conversationsList" class="conversation-list">
+        <div class="loading">加载中...</div>
+      </div>
+    </div>
+
+    <!-- 聊天页面 -->
+    <div id="chatPage" class="hidden">
+      <button class="back-btn" onclick="showConversationsPage()">
+        ← 返回
+      </button>
+      <div class="header">
+        <h1 id="chatTitle">对话</h1>
+      </div>
+      <div class="card">
+        <div id="messagesList" class="messages">
+          <div class="empty">暂无消息</div>
+        </div>
+        <div class="message-input">
+          <textarea id="messageInput" placeholder="输入消息..." rows="1"></textarea>
+          <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+            ➤
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let ws = null;
+    let currentConversationId = null;
+    let conversations = [];
+    // Happy 架构改进 - 会话活动状态映射
+    let sessionActivity = {}; // sessionId -> { active, activeAt, thinking, thinkingAt }
+
+    // 显示连接页面
+    function showConnectPage() {
+      document.getElementById('connectPage').classList.remove('hidden');
+      document.getElementById('conversationsPage').classList.add('hidden');
+      document.getElementById('chatPage').classList.add('hidden');
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      updateConnectionStatus(false);
+    }
+
+    // 显示对话列表页面
+    function showConversationsPage() {
+      document.getElementById('connectPage').classList.add('hidden');
+      document.getElementById('conversationsPage').classList.remove('hidden');
+      document.getElementById('chatPage').classList.add('hidden');
+    }
+
+    // 显示聊天页面
+    function showChatPage() {
+      document.getElementById('connectPage').classList.add('hidden');
+      document.getElementById('conversationsPage').classList.add('hidden');
+      document.getElementById('chatPage').classList.remove('hidden');
+    }
+
+    // 更新连接状态
+    function updateConnectionStatus(connected) {
+      const statusEl = document.getElementById('connectionStatus');
+      if (connected) {
+        statusEl.className = 'status connected';
+        statusEl.innerHTML = '<span class="status-dot"></span><span>已连接</span>';
+      } else {
+        statusEl.className = 'status disconnected';
+        statusEl.innerHTML = '<span class="status-dot"></span><span>未连接</span>';
+      }
+    }
+
+    // 连接 WebSocket
+    function connect() {
+      const ip = document.getElementById('serverIp').value.trim();
+      const port = document.getElementById('serverPort').value.trim() || '3000';
+      const password = document.getElementById('serverPassword').value.trim();
+
+      if (!ip) {
+        alert('请输入桌面端 IP 地址');
+        return;
+      }
+
+      const url = `ws://${ip}:${port}`;
+      console.log('连接到:', url);
+
+      try {
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+          console.log('WebSocket 已连接');
+          updateConnectionStatus(true);
+
+          // 发送认证消息（如果有密码）
+          if (password) {
+            ws.send(JSON.stringify({
+              type: 'auth',
+              data: { password }
+            }));
+          }
+
+          // 请求对话列表
+          requestConversations();
+
+          // 延迟跳转到对话列表页面
+          setTimeout(showConversationsPage, 500);
+        };
+
+        ws.onmessage = (event) => {
+          console.log('收到消息:', event.data);
+          try {
+            const message = JSON.parse(event.data);
+            handleMessage(message);
+          } catch (e) {
+            console.log('非 JSON 消息:', event.data);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket 错误:', error);
+          alert('连接失败，请检查:\n1. 桌面端应用是否正在运行\n2. IP 地址是否正确\n3. 手机和电脑是否在同一网络');
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket 已断开');
+          updateConnectionStatus(false);
+          alert('连接已断开');
+          showConnectPage();
+        };
+
+        document.getElementById('connectBtn').disabled = true;
+        document.getElementById('connectBtn').textContent = '连接中...';
+
+      } catch (error) {
+        console.error('连接错误:', error);
+        alert('连接失败: ' + error.message);
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('connectBtn').textContent = '连接';
+      }
+    }
+
+    // 请求对话列表
+    function requestConversations() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'get-conversations'
+        }));
+      }
+    }
+
+    // 选择对话
+    function selectConversation(convId) {
+      currentConversationId = convId;
+      const conv = conversations.find(c => c.id === convId);
+      if (conv) {
+        document.getElementById('chatTitle').textContent = conv.title;
+      }
+      showChatPage();
+
+      // 发送选择对话的消息
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'select-conversation',
+          data: { conversationId: convId }
+        }));
+      }
+
+      // 清空消息列表
+      document.getElementById('messagesList').innerHTML = '<div class="empty">加载消息中...</div>';
+    }
+
+    // 发送消息
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value.trim();
+
+      if (!message) return;
+      if (!currentConversationId) {
+        alert('请先选择对话');
+        return;
+      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('未连接到服务器');
+        return;
+      }
+
+      // 添加用户消息到界面
+      addMessageToUI('user', message);
+
+      // 发送消息
+      ws.send(JSON.stringify({
+        type: 'chat-message',
+        data: {
+          conversationId: currentConversationId,
+          content: message
+        }
+      }));
+
+      input.value = '';
+      document.getElementById('sendBtn').disabled = true;
+    }
+
+    // 添加消息到界面
+    function addMessageToUI(role, content) {
+      const messagesList = document.getElementById('messagesList');
+
+      // 移除空状态提示
+      const emptyEl = messagesList.querySelector('.empty');
+      if (emptyEl) {
+        emptyEl.remove();
+      }
+
+      const msgDiv = document.createElement('div');
+      msgDiv.className = `message ${role}`;
+      msgDiv.textContent = content;
+      messagesList.appendChild(msgDiv);
+      messagesList.scrollTop = messagesList.scrollHeight;
+    }
+
+    // 处理收到的消息
+    function handleMessage(message) {
+      switch (message.type) {
+        case 'conversation-list':
+          conversations = message.data.conversations || [];
+          renderConversations();
+          break;
+
+        case 'chat-message':
+          if (message.data.conversationId === currentConversationId) {
+            addMessageToUI('assistant', message.data.content);
+          }
+          document.getElementById('sendBtn').disabled = false;
+          break;
+
+        // Happy 架构改进 - 处理活动状态更新
+        case 'activity':
+          console.log('收到活动状态更新:', message);
+          const sessionId = message.sessionId;
+          sessionActivity[sessionId] = {
+            active: message.active,
+            activeAt: message.activeAt,
+            thinking: message.thinking || false,
+            thinkingAt: message.thinkingAt || 0
+          };
+          renderConversations();
+          break;
+
+        case 'permission-request':
+          handlePermissionRequest(message.data);
+          break;
+
+        case 'error':
+          alert('错误: ' + message.data.message);
+          document.getElementById('sendBtn').disabled = false;
+          break;
+
+        case 'auth-success':
+          console.log('认证成功');
+          break;
+
+        case 'auth-failed':
+          alert('认证失败: 密码错误');
+          showConnectPage();
+          break;
+
+        default:
+          console.log('未知消息类型:', message.type);
+      }
+    }
+
+    // 渲染对话列表
+    function renderConversations() {
+      const container = document.getElementById('conversationsList');
+
+      if (conversations.length === 0) {
+        container.innerHTML = '<div class="empty">暂无对话，请先在桌面端创建对话</div>';
+        return;
+      }
+
+      container.innerHTML = conversations.map(conv => {
+        // Happy 架构改进 - 获取活动状态
+        const activity = sessionActivity[conv.id] || {};
+        const isThinking = activity.thinking;
+        const isActive = activity.active && !isThinking;
+
+        // 格式化活动时间
+        let activityText = '';
+        if (isThinking && activity.thinkingAt) {
+          const duration = Math.floor((Date.now() - activity.thinkingAt) / 1000);
+          activityText = `思考中 (${duration}s)`;
+        } else if (isActive && activity.activeAt) {
+          const duration = Math.floor((Date.now() - activity.activeAt) / 1000);
+          activityText = `活跃 (${duration}s 前)`;
+        }
+
+        return `
+          <div class="conversation-item" onclick="selectConversation('${conv.id}')">
+            <div class="status-indicator ${conv.status}"></div>
+            <div class="conversation-info">
+              <div class="conversation-title">${conv.title}</div>
+              ${conv.lastMessage ? `<div class="conversation-preview">${conv.lastMessage}</div>` : ''}
+              <!-- Happy 架构改进 - 活动状态显示 -->
+              ${activityText ? `<div class="activity-status ${isThinking ? 'thinking' : 'active'}">${activityText}</div>` : ''}
+            </div>
+            <!-- Happy 架构改进 - 活动状态指示点 -->
+            ${(isThinking || isActive) ? `<div class="activity-dot ${isThinking ? 'thinking' : 'active'}"></div>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 处理权限请求
+    function handlePermissionRequest(data) {
+      const confirmed = confirm(
+        `权限请求\n\n` +
+        `工具: ${data.toolName}\n` +
+        `详情: ${data.details}\n\n` +
+        `是否允许？`
+      );
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'permission-response',
+          data: {
+            conversationId: currentConversationId,
+            choice: confirmed ? 'yes' : 'no',
+            requestId: data.requestId
+          }
+        }));
+      }
+    }
+
+    // 监听输入框的回车键
+    document.addEventListener('DOMContentLoaded', () => {
+      const textarea = document.getElementById('messageInput');
+      textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

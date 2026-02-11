@@ -34,7 +34,7 @@ CC QwQ 是一个跨平台应用，让你可以在移动设备上与运行在桌�
 ```bash
 cd electron_app
 npm install
-npm run dev
+npm run dev / npm run electron:dev
 ```
 
 ### 移动应用

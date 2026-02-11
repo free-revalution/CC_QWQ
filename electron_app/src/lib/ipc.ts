@@ -550,6 +550,26 @@ export const ipc: ElectronAPI = {
   },
 
   /**
+   * 订阅审批请求
+   * @param callback 回调函数
+   * @returns 清理 ID
+   */
+  onApprovalRequest: (callback: (data: {
+    requestId: string
+    tool: string
+    params: any
+    riskLevel: 'low' | 'medium' | 'high'
+    reason?: string
+  }) => void) => {
+    if (window.electronAPI?.onApprovalRequest) {
+      const cleanupId = window.electronAPI.onApprovalRequest(callback)
+      return cleanupId
+    }
+    console.warn('electronAPI.onApprovalRequest not available')
+    return ''
+  },
+
+  /**
    * 移除监听器
    * @param cleanupId 清理 ID
    */

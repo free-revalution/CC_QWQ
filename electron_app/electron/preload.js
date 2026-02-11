@@ -148,6 +148,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   clearRememberedChoices: () => ipcRenderer.invoke('clear-remembered-choices'),
 
+  // 订阅审批请求
+  onApprovalRequest: (callback) => {
+    const handler = (_event, data) => callback(data)
+    ipcRenderer.on('approval-request', handler)
+    const cleanupId = `approval-request-${Date.now()}`
+    listenerCleanup.set(cleanupId, () => {
+      ipcRenderer.removeListener('approval-request', handler)
+    })
+    return cleanupId
+  },
+
   // 移除监听器
   removeListener: (cleanupId) => {
     const cleanup = listenerCleanup.get(cleanupId)

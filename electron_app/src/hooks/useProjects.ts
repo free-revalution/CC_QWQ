@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import type { Project } from '../types'
 import { getRecentProjects, saveRecentProjects } from '../lib/storage'
 
-const MAX_RECENT_PROJECTS = 20
+const MAX_RECENT_PROJECTS = 20 // 最大最近项目数
 
 /**
  * 从 localStorage 加载并验证项目数据

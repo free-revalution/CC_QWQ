@@ -15,15 +15,29 @@ export interface ClaudeIntegrationConfig {
   platform: 'whatsapp' | 'feishu';
 }
 
+/**
+ * Extended permission data with conversation context
+ */
+interface PendingPermissionData {
+  conversationId: string;
+  toolName: string;
+  input: any;
+  createdAt: number;
+  expiresAt: number;
+}
+
 export class ClaudeIntegration {
   private state: ReducerState;
   private currentConversation: string | null = null;
   private currentProject: string | null = null;
   private platform: 'whatsapp' | 'feishu';
+  private permissionTimeoutMs: number = 5 * 60 * 1000; // 5 minutes default
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(platform: 'whatsapp' | 'feishu') {
     this.platform = platform;
     this.state = createReducerState();
+    this.startCleanupInterval();
   }
 
   /**
@@ -58,6 +72,15 @@ export class ClaudeIntegration {
     if (result.permissions.length > 0) {
       // Handle permissions - send to chat
       for (const perm of result.permissions) {
+        // Track permission with conversation context
+        if (this.currentConversation) {
+          this.state.pendingPermissions.set(perm.permission.id, {
+            ...perm.permission,
+            conversationId: this.currentConversation,
+            createdAt: Date.now(),
+            expiresAt: Date.now() + this.permissionTimeoutMs
+          } as any);
+        }
         await this.sendPermissionNotification(perm);
       }
     }
@@ -70,7 +93,7 @@ export class ClaudeIntegration {
    */
   private async sendPermissionNotification(permission: PermissionMessage): Promise<void> {
     // Get the bot manager instance
-    const botManager = (window as any).botManager;
+    const botManager = (await import('../index')).botManager;
     if (!botManager) {
       console.error('Bot manager not available');
       return;
@@ -87,16 +110,84 @@ export class ClaudeIntegration {
    * Respond to permission request
    */
   async respondToPermission(permissionId: string, decision: 'approve' | 'deny'): Promise<void> {
+    // Get permission data with conversation context
+    const permData = this.state.pendingPermissions.get(permissionId) as unknown as PendingPermissionData;
+
+    if (!permData) {
+      console.error(`Permission ${permissionId} not found or expired`);
+      return;
+    }
+
+    // Check if permission has expired
+    if (Date.now() > permData.expiresAt) {
+      console.error(`Permission ${permissionId} has expired`);
+      this.state.pendingPermissions.delete(permissionId);
+      return;
+    }
+
     // Update local state
     const perm = this.state.pendingPermissions.get(permissionId);
     if (perm) {
       perm.status = decision === 'approve' ? 'approved' : 'denied';
       perm.decision = decision === 'approve' ? 'approved' : 'denied';
+      perm.completedAt = Date.now();
     }
 
-    // Send to Claude Code via IPC
+    // Send to Claude Code via IPC with conversationId
     const choice = decision === 'approve' ? 'yes' : 'no';
-    await ipc.respondPermission(permissionId, choice);
+    await ipc.respondPermission(permData.conversationId, choice);
+
+    // Remove from pending after responding
+    this.state.pendingPermissions.delete(permissionId);
+  }
+
+  /**
+   * Get pending permissions with conversation context
+   */
+  getPendingPermissions(): Array<{ id: string; data: PendingPermissionData }> {
+    const now = Date.now();
+    const pending: Array<{ id: string; data: PendingPermissionData }> = [];
+
+    this.state.pendingPermissions.forEach((perm, id) => {
+      const permData = perm as unknown as PendingPermissionData;
+      if (permData.expiresAt > now) {
+        pending.push({ id, data: permData });
+      }
+    });
+
+    return pending.sort((a, b) => a.data.createdAt - b.data.createdAt);
+  }
+
+  /**
+   * Start cleanup interval for expired permissions
+   */
+  private startCleanupInterval(): void {
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+
+      this.state.pendingPermissions.forEach((perm, id) => {
+        const permData = perm as unknown as PendingPermissionData;
+        if (permData.expiresAt && permData.expiresAt < now) {
+          this.state.pendingPermissions.delete(id);
+          cleaned++;
+        }
+      });
+
+      if (cleaned > 0) {
+        console.log(`[ClaudeIntegration] Cleaned up ${cleaned} expired permissions`);
+      }
+    }, 60 * 1000); // Check every minute
+  }
+
+  /**
+   * Cleanup method to stop intervals (for shutdown)
+   */
+  dispose(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
   }
 
   /**
@@ -119,6 +210,19 @@ export class ClaudeIntegration {
   setConversation(conversationId: string, projectPath: string): void {
     this.currentConversation = conversationId;
     this.currentProject = projectPath;
+  }
+
+  /**
+   * Get current conversation info
+   */
+  getCurrentConversation(): { id: string; projectPath: string } | null {
+    if (!this.currentConversation || !this.currentProject) {
+      return null;
+    }
+    return {
+      id: this.currentConversation,
+      projectPath: this.currentProject,
+    };
   }
 
   /**

@@ -34,7 +34,7 @@ This project is in **active development**. We are looking for contributors to he
 ```bash
 cd electron_app
 npm install
-npm run dev
+npm run dev / npm run electron:dev
 ```
 
 ### Mobile App

@@ -33,6 +33,12 @@ interface ElectronAPI {
   openFolder: () => Promise<string | null>
   openFile: () => Promise<string | null>
   selectFile: () => Promise<{ success: boolean; filePath?: string }>
+  /**
+   * 上传文件到对话
+   * @param filePath 文件路径
+   * @param conversationId 对话 ID
+   */
+  uploadFile: (filePath: string, conversationId: string) => Promise<{ success: boolean; error?: string }>
   claudeSend: (projectPath: string, message: string) => Promise<{ messageId: string }>
   setLinkPassword: (password: string) => Promise<{ success: boolean; port: number }>
   getConnectionInfo: () => Promise<{ ip: string; port: number; hasPassword: boolean }>

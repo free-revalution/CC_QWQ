@@ -1,73 +1,125 @@
-# React + TypeScript + Vite
+# Claude Code Desktop
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+一个基于 Electron + React + TypeScript 构建的 Claude Code 桌面客户端，支持移动端与桌面端同步。
 
-Currently, two official plugins are available:
+## 功能特性
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### 核心功能
+- 📱 **移动端同步** - 通过 WebSocket 与移动端保持实时同步
+- 💬 **多会话管理** - 支持多个 Claude 对话同时进行
+- 📁 **文件上传** - 支持代码、图片、文本等多种文件格式
+- 🔐 **权限管理** - 细粒度的操作权限控制
+- 🤖 **Bot 集成** - 支持 WhatsApp/Feishu Bot 远程访问
 
-## React Compiler
+### 性能优化
+- ⚡ **虚拟滚动** - 使用 react-window 优化大量消息渲染
+- 🎯 **React.memo** - 组件级别的性能优化
+- 📊 **按需渲染** - 只在消息数 > 50 时启用虚拟滚动
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### UI/UX
+- 🎨 **玻璃态设计** - 现代化的毛玻璃效果 UI
+- 📱 **响应式布局** - 完美适配桌面和移动设备
+- 🌈 **渐变动画** - 流畅的视觉过渡效果
+- 🌙 **深色主题** - 护眼的深色模式设计
 
-## Expanding the ESLint configuration
+## 技术栈
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **框架**: React 18 + TypeScript
+- **构建**: Vite
+- **桌面**: Electron
+- **样式**: Tailwind CSS
+- **状态**: React Hooks
+- **性能**: react-window
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 开发指南
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 安装依赖
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 开发模式
+```bash
+npm run dev
 ```
+
+### 构建
+```bash
+npm run build
+```
+
+### 打包 Electron 应用
+```bash
+npm run build:electron
+```
+
+## 项目结构
+
+```
+electron_app/
+├── src/
+│   ├── components/        # React 组件
+│   │   ├── mobile/        # 移动端组件
+│   │   │   ├── ConversationDrawer.tsx
+│   │   │   ├── ConversationItem.tsx
+│   │   │   └── StatusIndicator.tsx
+│   │   └── ui/            # 通用 UI 组件
+│   ├── pages/             # 页面组件
+│   │   ├── OpenPage.tsx
+│   │   ├── ConversationPage.tsx
+│   │   └── SettingsPage.tsx
+│   ├── lib/               # 工具库
+│   ├── types/             # TypeScript 类型定义
+│   └── main.tsx           # 应用入口
+├── electron/
+│   └── main.ts            # Electron 主进程
+└── docs/
+    └── plans/             # 设计文档
+```
+
+## 移动端同步协议
+
+### WebSocket 消息类型
+
+#### 客户端 → 服务器
+- `ping` - 心跳检测
+- `chat-message` - 发送聊天消息
+- `select-conversation` - 选择对话
+- `permission-response` - 权限响应
+
+#### 服务器 → 客户端
+- `pong` - 心跳响应
+- `conversation-list` - 对话列表更新
+- `chat-message` - 接收聊天消息
+- `permission-request` - 权限请求
+- `sync-status` - 同步状态
+
+### IPC 通信
+
+渲染进程与主进程通过 IPC 通信：
+
+- `getConversationList()` - 获取对话列表
+- `uploadFile(path, conversationId)` - 上传文件
+- `selectFile()` - 选择文件
+- `claudeSend(...)` - 发送消息给 Claude
+- `get/setLinkPassword()` - 管理连接密码
+
+## 配置
+
+### WebSocket 服务器
+默认端口: `3000`
+
+可在设置页面修改：
+1. 点击右上角设置按钮
+2. 配置 IP 地址和端口
+3. （可选）设置连接密码
+
+### Bot 集成
+支持通过 WhatsApp/Feishu Bot 远程访问 Claude：
+1. 在设置页面启用 Bot
+2. 配置对话 ID
+3. 使用 Bot 命令进行交互
+
+## 开源协议
+
+MIT License
