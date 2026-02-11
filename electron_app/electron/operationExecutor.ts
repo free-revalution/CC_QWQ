@@ -10,20 +10,25 @@ import { spawn } from 'child_process'
 import { createHash } from 'crypto'
 import type { ToolPermissionConfig, FileSnapshot } from '../src/types/operation.js'
 
-// 简单的 glob 匹配实现
-function matchesPattern(value: string, pattern: string): boolean {
+/**
+ * Convert glob pattern to RegExp
+ */
+function globToRegex(pattern: string): RegExp {
   const regex = pattern
     .replace(/\*\*/g, '.*')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
-  return new RegExp(regex).test(value)
+  return new RegExp(regex)
+}
+
+function matchesPattern(value: string, pattern: string): boolean {
+  return globToRegex(pattern).test(value)
 }
 
 function matchesAnyPattern(value: string, patterns: string[]): boolean {
   return patterns.some(pattern => {
     if (pattern.startsWith('!')) {
-      const regex = pattern.substring(1).replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*')
-      return !new RegExp(regex).test(value)
+      return !globToRegex(pattern.substring(1)).test(value)
     }
     return matchesPattern(value, pattern)
   })
