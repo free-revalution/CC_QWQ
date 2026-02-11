@@ -231,25 +231,101 @@ export class BrowserManager {
   /**
    * 创建新页面
    */
-  async newPage(): Promise<BrowserResult> {
-    // TODO: Task 4 - Implement page creation
-    throw new Error('Not implemented')
+  async newPage(options: PageOptions = {}): Promise<BrowserResult<string>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    try {
+      const pageId = options.id || `page-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
+
+      // 检查 ID 是否已存在
+      if (this.pages.has(pageId)) {
+        return {
+          success: false,
+          error: `Page with ID '${pageId}' already exists`
+        }
+      }
+
+      console.log(`[BrowserManager] Creating new page: ${pageId}`)
+
+      // 创建新页面
+      const page = await this.context!.newPage({
+        viewport: options.viewport || this.config.viewport
+      })
+
+      this.pages.set(pageId, page)
+      console.log(`[BrowserManager] Page created: ${pageId}`)
+
+      return {
+        success: true,
+        data: pageId
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to create page:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to create page: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 关闭指定页面
    */
-  async closePage(): Promise<BrowserResult> {
-    // TODO: Task 4 - Implement page closing
-    throw new Error('Not implemented')
+  async closePage(pageId: string): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.pages.get(pageId)
+
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // 不允许关闭默认页面
+    if (pageId === BrowserManager.DEFAULT_PAGE_ID) {
+      return {
+        success: false,
+        error: 'Cannot close default page'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Closing page: ${pageId}`)
+      await page.close()
+      this.pages.delete(pageId)
+      console.log(`[BrowserManager] Page closed: ${pageId}`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to close page:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to close page: ${errorMessage}`
+      }
+    }
   }
 
   /**
-   * 获取所有页面
+   * 获取所有页面 ID
    */
   listPages(): string[] {
-    // TODO: Task 4 - List all pages
-    throw new Error('Not implemented')
+    return Array.from(this.pages.keys())
   }
 
   /**
