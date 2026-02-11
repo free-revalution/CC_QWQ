@@ -42,28 +42,65 @@ function matchesAnyPattern(value: string, patterns: string[]): boolean {
  * 默认工具权限配置
  */
 const DEFAULT_TOOL_PERMISSIONS: Map<string, ToolPermissionConfig> = new Map([
-  // 浏览器工具
+  // Browser tools
   ['browser_navigate', {
     tool: 'browser_navigate',
-    requiresApproval: true,
-    riskLevel: 'medium',
-    autoApprovePatterns: [
-      'https://docs.claude.com/**',
-      'https://github.com/**'
-    ],
+    requiresApproval: false,
+    riskLevel: 'low',
     sandboxConstraints: {
-      allowedUrls: ['https://**']
+      allowedUrls: ['https://*', 'http://localhost:*']
     }
   }],
   ['browser_click', {
     tool: 'browser_click',
-    requiresApproval: false,
-    riskLevel: 'low'
+    requiresApproval: true,
+    riskLevel: 'medium'
+  }],
+  ['browser_fill', {
+    tool: 'browser_fill',
+    requiresApproval: true,
+    riskLevel: 'medium'
   }],
   ['browser_screenshot', {
     tool: 'browser_screenshot',
     requiresApproval: false,
     riskLevel: 'low'
+  }],
+  ['browser_text', {
+    tool: 'browser_text',
+    requiresApproval: false,
+    riskLevel: 'low'
+  }],
+  ['browser_wait', {
+    tool: 'browser_wait',
+    requiresApproval: false,
+    riskLevel: 'low'
+  }],
+  ['browser_evaluate', {
+    tool: 'browser_evaluate',
+    requiresApproval: true,
+    riskLevel: 'high'
+  }],
+  ['browser_cookies', {
+    tool: 'browser_cookies',
+    requiresApproval: true,
+    riskLevel: 'high'
+  }],
+  ['browser_upload', {
+    tool: 'browser_upload',
+    requiresApproval: true,
+    riskLevel: 'high',
+    sandboxConstraints: {
+      allowedPaths: [homeDir + '/development/**', homeDir + '/Downloads/**']
+    }
+  }],
+  ['browser_download', {
+    tool: 'browser_download',
+    requiresApproval: true,
+    riskLevel: 'medium',
+    sandboxConstraints: {
+      allowedPaths: [homeDir + '/.claude-browser/**']
+    }
   }],
 
   // 文件工具
@@ -295,7 +332,7 @@ export class ApprovalEngine extends EventEmitter {
    */
   private checkSandboxConstraints(
     tool: string,
-    params: any,
+    params: Record<string, unknown>,
     permission: ToolPermissionConfig
   ): { passed: boolean; reason?: string } {
     if (!permission.sandboxConstraints) return { passed: true }
@@ -355,7 +392,7 @@ export class ApprovalEngine extends EventEmitter {
   /**
    * 发送消息到渲染进程
    */
-  private sendToRenderer(channel: string, data: any): void {
+  private sendToRenderer(channel: string, data: unknown): void {
     BrowserWindow.getAllWindows().forEach(win => {
       if (!win.isDestroyed()) {
         win.webContents.send(channel, data)
@@ -394,7 +431,7 @@ export class ApprovalEngine extends EventEmitter {
   onApprovalRequest(callback: (request: {
     requestId: string
     tool: string
-    params: any
+    params: Record<string, unknown>
     riskLevel: 'low' | 'medium' | 'high'
     reason?: string
   }) => void): () => void {
