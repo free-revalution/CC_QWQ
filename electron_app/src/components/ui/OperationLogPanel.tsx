@@ -1,0 +1,166 @@
+import React, { useCallback, useEffect, useState } from 'react'
+import { ipc } from '../../lib/ipc'
+import type { LogEntry, LogLevel, LogCategory } from '../../types/operation'
+
+// Maximum number of log entries to keep in memory
+const MAX_LOG_ENTRIES = 500
+
+// Get display text for log level (pure function, moved outside component)
+const getLevelText = (level: LogLevel): string => {
+  const levelMap: Record<LogLevel, string> = {
+    info: 'Info',
+    success: 'Success',
+    warning: 'Warning',
+    error: 'Error',
+  }
+  return levelMap[level] || level
+}
+
+export const OperationLogPanel: React.FC = () => {
+  const [logs, setLogs] = useState<LogEntry[]>([])
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<{
+    level?: LogLevel
+    category?: LogCategory
+    tool?: string
+  }>({})
+
+  // Load historical logs with abort pattern for race condition prevention
+  useEffect(() => {
+    let isCancelled = false
+    const loadLogs = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const result = await ipc.getLogs(filter)
+        if (!isCancelled) {
+          setLogs(result)
+        }
+      } catch (err) {
+        if (!isCancelled) {
+          const errorMessage = err instanceof Error ? err.message : 'Failed to load logs'
+          setError(errorMessage)
+          console.error('Error loading logs:', err)
+        }
+      } finally {
+        if (!isCancelled) {
+          setLoading(false)
+        }
+      }
+    }
+    loadLogs()
+    return () => {
+      isCancelled = true
+    }
+  }, [filter])
+
+  // Subscribe to real-time logs with limit enforcement
+  useEffect(() => {
+    const cleanupId = ipc.onLogEntry((log) => {
+      setLogs(prev => {
+        const newLogs = [...prev, log]
+        // Trim logs to maximum limit to prevent memory issues
+        return newLogs.length > MAX_LOG_ENTRIES
+          ? newLogs.slice(-MAX_LOG_ENTRIES)
+          : newLogs
+      })
+    })
+    return () => ipc.removeListener(cleanupId)
+  }, [])
+
+  // Clear logs with error handling
+  const handleClear = useCallback(async () => {
+    try {
+      await ipc.clearLogs()
+      setLogs([])
+      setError(null)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to clear logs'
+      setError(errorMessage)
+      console.error('Error clearing logs:', err)
+    }
+  }, [])
+
+  // Export logs with error handling
+  const handleExport = useCallback(async (format: 'json' | 'text') => {
+    try {
+      const content = await ipc.exportLogs(format)
+      const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `logs.${format}`
+      a.click()
+      URL.revokeObjectURL(url)
+      setError(null)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to export logs'
+      setError(errorMessage)
+      console.error('Error exporting logs:', err)
+    }
+  }, [])
+
+  return (
+    <div className="operation-log-panel">
+      <div className="log-header">
+        <h3>Operation Log</h3>
+        <div className="log-actions">
+          <select
+            value={filter.level || ''}
+            onChange={(e) => setFilter({ ...filter, level: e.target.value as LogLevel | undefined })}
+          >
+            <option value="">All Levels</option>
+            <option value="info">Info</option>
+            <option value="success">Success</option>
+            <option value="warning">Warning</option>
+            <option value="error">Error</option>
+          </select>
+          <select
+            value={filter.category || ''}
+            onChange={(e) => setFilter({ ...filter, category: e.target.value as LogCategory | undefined })}
+          >
+            <option value="">All Categories</option>
+            <option value="tool">Tool</option>
+            <option value="approval">Approval</option>
+            <option value="system">System</option>
+            <option value="rollback">Rollback</option>
+          </select>
+          <button onClick={handleClear}>Clear</button>
+          <button onClick={() => handleExport('json')}>Export JSON</button>
+          <button onClick={() => handleExport('text')}>Export Text</button>
+        </div>
+      </div>
+
+      {/* Display error message */}
+      {error && (
+        <div className="log-error">
+          {error}
+        </div>
+      )}
+
+      {/* Display loading state */}
+      {loading && (
+        <div className="log-loading">Loading logs...</div>
+      )}
+
+      <div className="log-list">
+        {logs.map(log => (
+          <div key={log.id} className={`log-item log-${log.level}`}>
+            <div className="log-meta">
+              <span className="log-time">{new Date(log.timestamp).toLocaleString()}</span>
+              <span className="log-level">{getLevelText(log.level)}</span>
+              <span className="log-category">{log.category}</span>
+              {log.tool && <span className="log-tool">{log.tool}</span>}
+            </div>
+            <div className="log-title">{log.title}</div>
+            <div className="log-message">{log.message}</div>
+            {log.details && (
+              <pre className="log-details">{JSON.stringify(log.details, null, 2)}</pre>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
