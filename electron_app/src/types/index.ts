@@ -229,6 +229,51 @@ export interface ElectronAPI {
     riskLevel: 'low' | 'medium' | 'high'
     reason?: string
   }) => void) => string
+
+  /** ==================== 检查点管理 ==================== */
+
+  /** 列出所有检查点 */
+  checkpointList: () => Promise<Array<{
+    id: string
+    name: string
+    description: string
+    timestamp: number
+    fileSnapshots: Array<[string, string]>
+  }>>
+
+  /** 获取单个检查点 */
+  checkpointGet: (id: string) => Promise<{
+    id: string
+    name: string
+    description: string
+    timestamp: number
+    fileSnapshots: Array<[string, string]>
+  } | null>
+
+  /** 手动创建检查点 */
+  checkpointCreate: (name: string, description: string) => Promise<{
+    id: string
+    name: string
+    description: string
+    timestamp: number
+    fileSnapshots: Array<[string, string]>
+  } | null>
+
+  /** ==================== 回滚引擎 ==================== */
+
+  /** 预览回滚 */
+  rollbackPreview: (checkpointId: string) => Promise<import('./operation').RollbackPreview>
+
+  /** 执行回滚 */
+  rollbackExecute: (checkpointId: string) => Promise<import('./operation').RollbackResult>
+
+  /** ==================== 日志导出 ==================== */
+
+  /** 导出日志（支持 CSV 和 Markdown） */
+  exportLogsV2: (options: {
+    format: 'json' | 'csv' | 'markdown'
+    timeRange?: { start: number; end: number }
+  }) => Promise<{ success: boolean; content?: string; error?: string }>
 }
 
 /**
