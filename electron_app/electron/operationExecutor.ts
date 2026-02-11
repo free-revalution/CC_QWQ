@@ -171,8 +171,47 @@ export class OperationExecutor {
    * 写入文件（支持回滚）
    */
   async writeFile(filePath: string, content: string): Promise<ExecutionResult> {
-    // 实现将在后续步骤完成
-    return { success: false, error: 'Not implemented' }
+    try {
+      // 获取权限配置
+      const permission = this.getToolPermission('sandbox_write_file')
+
+      if (!permission?.sandboxConstraints) {
+        return { success: false, error: 'No sandbox constraints configured for file writing' }
+      }
+
+      // 验证路径
+      if (!this.validatePath(filePath, permission.sandboxConstraints.allowedPaths)) {
+        return { success: false, error: `Access denied: path not in allowed sandbox` }
+      }
+
+      // 检查文件大小限制
+      const maxSize = permission.sandboxConstraints.maxFileSize || 10 * 1024 * 1024
+      if (content.length > maxSize) {
+        return {
+          success: false,
+          error: `File too large: ${content.length} bytes (max: ${maxSize} bytes)`
+        }
+      }
+
+      // 创建快照
+      const snapshotId = await this.createSnapshot(filePath)
+
+      // 写入文件
+      await fs.writeFile(filePath, content, 'utf-8')
+
+      return {
+        success: true,
+        data: {
+          bytesWritten: content.length,
+          snapshotId
+        }
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Failed to write file: ${(error as Error).message}`
+      }
+    }
   }
 
   /**
