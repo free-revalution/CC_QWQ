@@ -817,6 +817,12 @@ export const operationLogger = new OperationLogger()
 // 审批引擎
 export const approvalEngine = new ApprovalEngine()
 
+// 检查点管理器
+export let checkpointManager: CheckpointManager
+
+// 回滚引擎
+export let rollbackEngine: RollbackEngine
+
 // WebSocket 服务器实例
 let wss: WebSocketServer | null = null
 
@@ -3003,6 +3009,98 @@ ipcMain.handle('export-logs', async (_event, format: 'json' | 'text' = 'json') =
   }
 })
 
+// ==================== 检查点管理 IPC ====================
+
+// 列出所有检查点
+ipcMain.handle('checkpoint-list', async () => {
+  try {
+    const checkpoints = checkpointManager.list()
+    // 转换 Map 为普通对象以便序列化
+    return checkpoints.map(cp => ({
+      ...cp,
+      fileSnapshots: Array.from(cp.fileSnapshots.entries())
+    }))
+  } catch (error) {
+    console.error('[Checkpoint] List error:', error)
+    return []
+  }
+})
+
+// 获取单个检查点
+ipcMain.handle('checkpoint-get', async (_event, id: string) => {
+  try {
+    const checkpoint = checkpointManager.get(id)
+    if (!checkpoint) return null
+    return {
+      ...checkpoint,
+      fileSnapshots: Array.from(checkpoint.fileSnapshots.entries())
+    }
+  } catch (error) {
+    console.error('[Checkpoint] Get error:', error)
+    return null
+  }
+})
+
+// 手动创建检查点
+ipcMain.handle('checkpoint-create', async (_event, name: string, description: string) => {
+  try {
+    const checkpoint = checkpointManager.createManual(name, description, new Map())
+    return {
+      ...checkpoint,
+      fileSnapshots: Array.from(checkpoint.fileSnapshots.entries())
+    }
+  } catch (error) {
+    console.error('[Checkpoint] Create error:', error)
+    return null
+  }
+})
+
+// ==================== 回滚操作 IPC ====================
+
+// 预览回滚
+ipcMain.handle('rollback-preview', async (_event, checkpointId: string) => {
+  try {
+    const preview = rollbackEngine.previewRollback(checkpointId)
+    return preview
+  } catch (error) {
+    console.error('[Rollback] Preview error:', error)
+    return { files: [], canRollback: false, warnings: ['Preview failed'] }
+  }
+})
+
+// 执行回滚
+ipcMain.handle('rollback-execute', async (_event, checkpointId: string) => {
+  try {
+    const result = await rollbackEngine.rollbackTo(checkpointId)
+
+    // 记录回滚操作
+    operationLogger.logSystem(
+      `Rollback to checkpoint ${checkpointId}: ${result.files?.length || 0} files affected`,
+      result.success ? 'success' : 'error'
+    )
+
+    return result
+  } catch (error) {
+    console.error('[Rollback] Execute error:', error)
+    return { success: false, error: (error as Error).message }
+  }
+})
+
+// ==================== 日志导出 IPC (v2) ====================
+
+// 导出日志（新版本，支持 CSV 和 Markdown）
+ipcMain.handle('export-logs-v2', async (_event, options: { format: 'json' | 'csv' | 'markdown', timeRange?: { start: number; end: number } }) => {
+  try {
+    const logs = operationLogger.getLogs()
+    const exporter = new LogExporter()
+    const content = exporter.export(logs, options)
+    return content
+  } catch (error) {
+    console.error('[Export] Error:', error)
+    throw error
+  }
+})
+
 // ==================== 审批引擎 IPC ====================
 
 // 订阅审批请求
@@ -3069,7 +3167,7 @@ app.on('ready', async () => {
   const MCP_PROXY_PORT = 3010
   try {
     // 初始化 CheckpointManager
-    const checkpointManager = new CheckpointManager(50, 7)
+    checkpointManager = new CheckpointManager(50, 7)
 
     // 初始化 OperationExecutor（传入 CheckpointManager）
     const operationExecutor = new OperationExecutor(
@@ -3078,11 +3176,10 @@ app.on('ready', async () => {
     )
 
     // 初始化 RollbackEngine（传入 CheckpointManager 和 OperationExecutor）
-    const rollbackEngine = new RollbackEngine(
+    rollbackEngine = new RollbackEngine(
       checkpointManager,
       operationExecutor
     )
-    // TODO: RollbackEngine will be used in Task 7 (IPC handlers)
 
     const mcpProxyServer = new MCPProxyServer(
       MCP_PROXY_PORT,
