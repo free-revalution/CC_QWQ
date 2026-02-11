@@ -593,17 +593,108 @@ export class BrowserManager {
   /**
    * 等待元素
    */
-  async waitFor(): Promise<BrowserResult> {
-    // TODO: Task 7 - Implement wait for
-    throw new Error('Not implemented')
+  async waitFor(pageId: string, selector: string, timeout?: number): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    // Validate timeout
+    const waitTimeout = timeout || 30000
+    if (waitTimeout <= 0) {
+      return {
+        success: false,
+        error: 'Timeout must be positive'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Waiting for element on page '${pageId}': ${selector} (timeout: ${waitTimeout}ms)`)
+
+      await page.waitForSelector(selector, { timeout: waitTimeout })
+
+      console.log(`[BrowserManager] Element found on page '${pageId}': ${selector}`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to wait for element:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to wait for element: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 执行 JavaScript
    */
-  async evaluate(): Promise<BrowserResult> {
-    // TODO: Task 7 - Implement evaluate
-    throw new Error('Not implemented')
+  async evaluate(pageId: string, script: string): Promise<BrowserResult<any>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate script
+    if (!script || script.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Script cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Evaluating script on page '${pageId}'`)
+
+      const result = await page.evaluate((js: string) => {
+        // eslint-disable-next-line no-eval
+        return eval(js)
+      }, script)
+
+      console.log(`[BrowserManager] Script evaluated on page '${pageId}'`)
+
+      return {
+        success: true,
+        data: result
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to evaluate script:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to evaluate script: ${errorMessage}`
+      }
+    }
   }
 
   /**
