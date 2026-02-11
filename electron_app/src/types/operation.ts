@@ -185,6 +185,103 @@ export interface DirectorySnapshot {
   timestamp: number
 }
 
+// ==================== 检查点 ====================
+
+/**
+ * 检查点
+ */
+export interface Checkpoint {
+  /** 唯一 ID (UUID) */
+  id: string
+  /** 检查点名称 (格式: checkpoint-YYYYMMDD-HHMMSS) */
+  name: string
+  /** 描述 (如 "Auto: Write config.json") */
+  description: string
+  /** 创建时间戳 */
+  timestamp: number
+  /** 包含的文件快照映射 (文件路径 -> 快照ID) */
+  fileSnapshots: Map<string, string>
+}
+
+/**
+ * 回滚结果
+ */
+export interface RollbackResult {
+  /** 是否成功 */
+  success: boolean
+  /** 错误信息 */
+  error?: string
+  /** 回滚的检查点 ID */
+  checkpointId?: string
+  /** 回滚的文件列表 */
+  files?: Array<{
+    path: string
+    snapshotId: string
+    success: boolean
+  }>
+}
+
+/**
+ * 回滚预览
+ */
+export interface RollbackPreview {
+  /** 将要回滚的文件 */
+  files: Array<{
+    path: string
+    currentSize: number
+    oldSize: number
+    willDelete: boolean
+  }>
+  /** 是否可以回滚 */
+  canRollback: boolean
+  /** 警告信息 */
+  warnings: string[]
+}
+
+// ==================== 时间线 ====================
+
+/**
+ * 时间线条目
+ */
+export interface TimelineEntry {
+  /** 唯一 ID */
+  id: string
+  /** 时间戳 */
+  timestamp: number
+  /** 工具名称 */
+  tool: string
+  /** 状态 */
+  status: 'pending' | 'approved' | 'denied' | 'success' | 'error'
+  /** 持续时间（毫秒） */
+  duration?: number
+  /** 参数摘要 */
+  summary: string
+}
+
+// ==================== 日志导出 ====================
+
+/**
+ * 导出格式
+ */
+export type ExportFormat = 'json' | 'csv' | 'markdown'
+
+/**
+ * 导出选项
+ */
+export interface ExportOptions {
+  /** 格式 */
+  format: ExportFormat
+  /** 时间范围 */
+  timeRange?: {
+    start: number
+    end: number
+  }
+  /** 操作类型过滤 */
+  toolFilter?: string[]
+  /** 状态过滤 */
+  statusFilter?: OperationStatus[]
+}
+
 /**
  * 操作记录
  */
