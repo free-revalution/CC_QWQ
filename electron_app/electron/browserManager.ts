@@ -714,17 +714,112 @@ export class BrowserManager {
   /**
    * 获取所有 Cookies
    */
-  async getCookies(): Promise<BrowserResult> {
-    // TODO: Task 8 - Implement get cookies
-    throw new Error('Not implemented')
+  async getCookies(pageId: string): Promise<BrowserResult<CookieOptions[]>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Getting cookies for page '${pageId}'`)
+
+      const cookies = await page.context().cookies()
+
+      // 转换为我们的 CookieOptions 格式
+      const cookieOptions: CookieOptions[] = cookies.map(c => ({
+        name: c.name,
+        value: c.value,
+        domain: c.domain,
+        path: c.path,
+        expiry: c.expires
+      }))
+
+      console.log(`[BrowserManager] Retrieved ${cookieOptions.length} cookies for page '${pageId}'`)
+
+      return {
+        success: true,
+        data: cookieOptions
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to get cookies:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to get cookies: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 设置 Cookie
    */
-  async setCookie(): Promise<BrowserResult> {
-    // TODO: Task 8 - Implement set cookie
-    throw new Error('Not implemented')
+  async setCookie(pageId: string, cookie: CookieOptions): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate cookie
+    if (!cookie.name || cookie.name.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Cookie name cannot be empty'
+      }
+    }
+
+    if (cookie.value === undefined || cookie.value === null) {
+      return {
+        success: false,
+        error: 'Cookie value cannot be undefined or null'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Setting cookie on page '${pageId}': ${cookie.name}`)
+
+      await page.context().addCookies([
+        {
+          name: cookie.name,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          expires: cookie.expiry
+        }
+      ])
+
+      console.log(`[BrowserManager] Cookie set on page '${pageId}': ${cookie.name}`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to set cookie:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to set cookie: ${errorMessage}`
+      }
+    }
   }
 
   /**
