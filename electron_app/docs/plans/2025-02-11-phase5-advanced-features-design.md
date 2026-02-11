@@ -26,7 +26,7 @@ Phase 5实现4个高级功能，增强用户体验和操作可控性：
 |------|----------|------|
 | 时间线面板 | `src/renderer/components/TimelinePanel.tsx` | 渲染可折叠侧边面板，显示操作历史 |
 | 检查点管理器 | `electron/checkpointManager.ts` | 自动创建和管理检查点 |
-| 回滚引擎 | `electron/rollbackEngine.ts` | 批量回滚到指定检查点 |
+| 回滚引擎 | `electron/rollbackEngine.ts` | 批量回滚到指定检查点（接收OperationExecutor以动态获取快照） |
 | 日志导出器 | `electron/logExporter.ts` | 导出操作日志 |
 
 ### 2.2 数据流向
@@ -140,12 +140,19 @@ class CheckpointManager {
 
 ```typescript
 class RollbackEngine {
+  constructor(
+    private checkpointManager: CheckpointManager,
+    private operationExecutor: OperationExecutor  // 动态获取快照，避免引用过时
+  ) {}
+
   rollbackTo(checkpointId: string): RollbackResult
   rollbackFile(filePath: string, snapshotId: string): RollbackResult
   getDiff(filePath: string, fromSnapshot: string, toSnapshot: string): DiffSummary
   previewRollback(checkpointId: string): PreviewResult
 }
 ```
+
+> **设计说明**: RollbackEngine接收OperationExecutor引用而非直接接收`Map<string, FileSnapshot>`，通过调用`operationExecutor.getSnapshots()`动态获取最新快照状态。这避免了在初始化时捕获快照Map引用导致的过时引用问题。
 
 ### 5.4 安全措施
 
