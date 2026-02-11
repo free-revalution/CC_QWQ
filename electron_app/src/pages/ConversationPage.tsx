@@ -10,6 +10,7 @@ import GitStatusPanel from '../components/ui/GitStatusPanel'
 import FileSearchPanel from '../components/ui/FileSearchPanel'
 import { OperationLogPanel } from '../components/ui/OperationLogPanel'
 import ActivityIndicator, { ActivityDot } from '../components/ui/ActivityIndicator'
+import TimelinePanel from '../components/ui/TimelinePanel'
 import { ApprovalDialog } from '../components/ui/ApprovalDialog'
 import { ApprovalPreferences } from '../components/ui/ApprovalPreferences'
 import { ipc } from '../lib/ipc'
@@ -1654,6 +1655,9 @@ Is there something specific you'd like to know or modify about this project?`
           </div>
         )}
       </div>
+
+      {/* TimelinePanel - 时间线面板 */}
+      <TimelinePanel className="timeline-sidebar" />
 
       {/* 文件引用菜单 */}
       <FileReferenceMenu
