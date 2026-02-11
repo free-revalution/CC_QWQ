@@ -5,7 +5,9 @@
  * 单例模式，全局唯一实例
  */
 
-import { chromium, type Browser, type BrowserContext, type Page, type LaunchOptions } from 'playwright'
+import * as path from 'path'
+import * as os from 'os'
+import { type Browser, type BrowserContext, type Page } from 'playwright'
 
 // 配置选项
 export interface BrowserConfig {
@@ -21,9 +23,9 @@ export interface PageOptions {
 }
 
 // 操作结果
-export interface BrowserResult {
+export interface BrowserResult<T = unknown> {
   success: boolean
-  data?: any
+  data?: T
   error?: string
 }
 
@@ -51,6 +53,8 @@ export interface CookieOptions {
 
 export class BrowserManager {
   private static instance: BrowserManager | null = null
+  private static readonly DEFAULT_PAGE_ID = 'main'
+
   private browser: Browser | null = null
   private context: BrowserContext | null = null
   private pages: Map<string, Page> = new Map()
@@ -60,13 +64,16 @@ export class BrowserManager {
     this.config = {
       headless: false,
       viewport: { width: 1280, height: 720 },
-      userDataDir: `${process.env.HOME}/.claude-browser`,
+      userDataDir: path.join(os.homedir(), '.claude-browser'),
       ...config
     }
   }
 
   /**
    * 获取单例实例
+   *
+   * @param config - 配置选项，仅在首次调用时生效。如果实例已存在，此参数将被忽略。
+   * @returns BrowserManager 单例实例
    */
   static getInstance(config?: BrowserConfig): BrowserManager {
     if (!BrowserManager.instance) {
@@ -225,12 +232,11 @@ export class BrowserManager {
       throw new Error('Browser context not initialized')
     }
 
-    const pageId = 'main'
-    let page = this.pages.get(pageId)
+    let page = this.pages.get(BrowserManager.DEFAULT_PAGE_ID)
 
     if (!page) {
       page = await this.context.newPage()
-      this.pages.set(pageId, page)
+      this.pages.set(BrowserManager.DEFAULT_PAGE_ID, page)
     }
 
     return page
