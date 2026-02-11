@@ -7,7 +7,7 @@
 
 import * as path from 'path'
 import * as os from 'os'
-import { type Browser, type BrowserContext, type Page } from 'playwright'
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
 
 // 配置选项
 export interface BrowserConfig {
@@ -86,16 +86,88 @@ export class BrowserManager {
    * 初始化浏览器
    */
   async initialize(): Promise<void> {
-    // TODO: Task 3 - Implement browser initialization
-    throw new Error('Not implemented')
+    if (this.isInitialized()) {
+      console.log('[BrowserManager] Browser already initialized')
+      return
+    }
+
+    try {
+      console.log('[BrowserManager] Initializing browser...')
+
+      // 使用系统Chrome，非headless模式
+      const launchOptions = {
+        headless: this.config.headless ?? false,
+        channel: 'chrome' as const,
+        args: [
+          '--disable-blink-features=AutomationControlled',
+          '--disable-dev-shm-usage',
+        ]
+      }
+
+      this.browser = await chromium.launch(launchOptions)
+      console.log('[BrowserManager] Browser launched')
+
+      // 创建浏览器上下文
+      this.context = await this.browser.newContext({
+        viewport: this.config.viewport || { width: 1280, height: 720 },
+        userAgent: 'Claude Code Browser Automation (https://claude.com/claude-code)',
+        acceptDownloads: true,
+      })
+
+      console.log('[BrowserManager] Browser context created')
+
+      // 创建默认页面
+      const defaultPage = await this.context.newPage()
+      this.pages.set(BrowserManager.DEFAULT_PAGE_ID, defaultPage)
+      console.log('[BrowserManager] Default page created')
+
+      console.log('[BrowserManager] Browser initialized successfully')
+    } catch (error) {
+      console.error('[BrowserManager] Failed to initialize browser:', error)
+      throw error
+    }
   }
 
   /**
    * 关闭浏览器
    */
   async close(): Promise<void> {
-    // TODO: Task 3 - Implement browser cleanup
-    throw new Error('Not implemented')
+    if (!this.isInitialized()) {
+      console.log('[BrowserManager] Browser not initialized, nothing to close')
+      return
+    }
+
+    try {
+      console.log('[BrowserManager] Closing browser...')
+
+      // 关闭所有页面
+      for (const [pageId, page] of this.pages.entries()) {
+        try {
+          await page.close()
+          console.log(`[BrowserManager] Page ${pageId} closed`)
+        } catch (error) {
+          console.error(`[BrowserManager] Failed to close page ${pageId}:`, error)
+        }
+      }
+      this.pages.clear()
+
+      // 关闭上下文
+      if (this.context) {
+        await this.context.close()
+        this.context = null
+      }
+
+      // 关闭浏览器
+      if (this.browser) {
+        await this.browser.close()
+        this.browser = null
+      }
+
+      console.log('[BrowserManager] Browser closed successfully')
+    } catch (error) {
+      console.error('[BrowserManager] Error closing browser:', error)
+      throw error
+    }
   }
 
   /**
@@ -108,7 +180,7 @@ export class BrowserManager {
   /**
    * 创建新页面
    */
-  async newPage(options: PageOptions = {}): Promise<BrowserResult> {
+  async newPage(): Promise<BrowserResult> {
     // TODO: Task 4 - Implement page creation
     throw new Error('Not implemented')
   }
@@ -116,7 +188,7 @@ export class BrowserManager {
   /**
    * 关闭指定页面
    */
-  async closePage(pageId: string): Promise<BrowserResult> {
+  async closePage(): Promise<BrowserResult> {
     // TODO: Task 4 - Implement page closing
     throw new Error('Not implemented')
   }
@@ -132,7 +204,7 @@ export class BrowserManager {
   /**
    * 导航到 URL
    */
-  async goto(pageId: string, url: string, options: NavigateOptions = {}): Promise<BrowserResult> {
+  async goto(): Promise<BrowserResult> {
     // TODO: Task 5 - Implement navigation
     throw new Error('Not implemented')
   }
@@ -140,7 +212,7 @@ export class BrowserManager {
   /**
    * 截图
    */
-  async screenshot(pageId: string, options: ScreenshotOptions = {}): Promise<BrowserResult> {
+  async screenshot(): Promise<BrowserResult> {
     // TODO: Task 5 - Implement screenshot
     throw new Error('Not implemented')
   }
@@ -148,7 +220,7 @@ export class BrowserManager {
   /**
    * 点击元素
    */
-  async click(pageId: string, selector: string): Promise<BrowserResult> {
+  async click(): Promise<BrowserResult> {
     // TODO: Task 6 - Implement click
     throw new Error('Not implemented')
   }
@@ -156,7 +228,7 @@ export class BrowserManager {
   /**
    * 填写输入框
    */
-  async fill(pageId: string, selector: string, value: string): Promise<BrowserResult> {
+  async fill(): Promise<BrowserResult> {
     // TODO: Task 6 - Implement fill
     throw new Error('Not implemented')
   }
@@ -164,7 +236,7 @@ export class BrowserManager {
   /**
    * 获取元素文本
    */
-  async getText(pageId: string, selector: string): Promise<BrowserResult> {
+  async getText(): Promise<BrowserResult> {
     // TODO: Task 6 - Implement get text
     throw new Error('Not implemented')
   }
@@ -172,7 +244,7 @@ export class BrowserManager {
   /**
    * 等待元素
    */
-  async waitFor(pageId: string, selector: string, timeout?: number): Promise<BrowserResult> {
+  async waitFor(): Promise<BrowserResult> {
     // TODO: Task 7 - Implement wait for
     throw new Error('Not implemented')
   }
@@ -180,7 +252,7 @@ export class BrowserManager {
   /**
    * 执行 JavaScript
    */
-  async evaluate(pageId: string, script: string): Promise<BrowserResult> {
+  async evaluate(): Promise<BrowserResult> {
     // TODO: Task 7 - Implement evaluate
     throw new Error('Not implemented')
   }
@@ -188,7 +260,7 @@ export class BrowserManager {
   /**
    * 获取所有 Cookies
    */
-  async getCookies(pageId: string): Promise<BrowserResult> {
+  async getCookies(): Promise<BrowserResult> {
     // TODO: Task 8 - Implement get cookies
     throw new Error('Not implemented')
   }
@@ -196,7 +268,7 @@ export class BrowserManager {
   /**
    * 设置 Cookie
    */
-  async setCookie(pageId: string, cookie: CookieOptions): Promise<BrowserResult> {
+  async setCookie(): Promise<BrowserResult> {
     // TODO: Task 8 - Implement set cookie
     throw new Error('Not implemented')
   }
@@ -204,7 +276,7 @@ export class BrowserManager {
   /**
    * 上传文件
    */
-  async upload(pageId: string, selector: string, filePath: string): Promise<BrowserResult> {
+  async upload(): Promise<BrowserResult> {
     // TODO: Task 9 - Implement upload
     throw new Error('Not implemented')
   }
@@ -212,7 +284,7 @@ export class BrowserManager {
   /**
    * 下载文件
    */
-  async download(pageId: string, selector: string): Promise<BrowserResult> {
+  async download(): Promise<BrowserResult> {
     // TODO: Task 9 - Implement download
     throw new Error('Not implemented')
   }
