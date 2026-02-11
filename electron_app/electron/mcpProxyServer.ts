@@ -17,13 +17,15 @@ import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operatio
 import type { ApprovalEngine } from './approvalEngine.js'
 import type { OperationLogger } from './operationLogger.js'
 import type { OperationExecutor } from './operationExecutor.js'
+import type { Server as HttpServer } from 'http'
+import { getBrowserManager } from './browserManager.js'
 
 const require = createRequire(import.meta.url)
 const express = require('express')
 
 export class MCPProxyServer extends EventEmitter {
   private server: Server | null = null
-  private httpServer: any | null = null
+  private httpServer: HttpServer | null = null
   private port: number
   private approvalEngine: ApprovalEngine
   private operationLogger: OperationLogger
@@ -171,7 +173,7 @@ export class MCPProxyServer extends EventEmitter {
         // 记录批准
         this.operationLogger.logApprovalGranted(name, decision.autoApproved)
 
-        // 执行工具（暂时返回模拟结果）
+        // 执行工具
         try {
           const startTime = Date.now()
           const result = await this.executeTool(name, args || {})
@@ -202,17 +204,15 @@ export class MCPProxyServer extends EventEmitter {
    */
   private getAvailableTools(): MCPToolDefinition[] {
     return [
-      // 浏览器工具
+      // Browser tools
       {
         name: 'browser_navigate',
         description: 'Navigate to a URL in controlled browser',
         inputSchema: {
           type: 'object',
           properties: {
-            url: {
-              type: 'string',
-              description: 'URL to navigate to (must be in whitelist)'
-            }
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            url: { type: 'string', description: 'URL to navigate to' }
           },
           required: ['url']
         }
@@ -223,12 +223,23 @@ export class MCPProxyServer extends EventEmitter {
         inputSchema: {
           type: 'object',
           properties: {
-            selector: {
-              type: 'string',
-              description: 'CSS selector'
-            }
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector' }
           },
           required: ['selector']
+        }
+      },
+      {
+        name: 'browser_fill',
+        description: 'Fill an input field with text',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector' },
+            value: { type: 'string', description: 'Text to fill' }
+          },
+          required: ['selector', 'value']
         }
       },
       {
@@ -236,8 +247,96 @@ export class MCPProxyServer extends EventEmitter {
         description: 'Take screenshot of current page',
         inputSchema: {
           type: 'object',
-          properties: {},
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' }
+          },
           required: []
+        }
+      },
+      {
+        name: 'browser_text',
+        description: 'Get text content from element',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector' }
+          },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'browser_wait',
+        description: 'Wait for element to appear',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector' },
+            timeout: { type: 'number', description: 'Timeout in milliseconds (default: 30000)' }
+          },
+          required: ['selector']
+        }
+      },
+      {
+        name: 'browser_evaluate',
+        description: 'Execute JavaScript in browser context',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            script: { type: 'string', description: 'JavaScript code to execute' }
+          },
+          required: ['script']
+        }
+      },
+      {
+        name: 'browser_cookies',
+        description: 'Get browser cookies',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            action: { type: 'string', enum: ['get', 'set'], description: 'Action to perform' },
+            cookie: {
+              type: 'object',
+              description: 'Cookie data (for set action)',
+              properties: {
+                name: { type: 'string' },
+                value: { type: 'string' },
+                domain: { type: 'string' },
+                path: { type: 'string' },
+                expiry: { type: 'number' }
+              },
+              required: ['name', 'value']
+            }
+          },
+          required: ['action']
+        }
+      },
+      {
+        name: 'browser_upload',
+        description: 'Upload file from allowed paths',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector of file input' },
+            filePath: { type: 'string', description: 'Path to file to upload' }
+          },
+          required: ['selector', 'filePath']
+        }
+      },
+      {
+        name: 'browser_download',
+        description: 'Download file by clicking element',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            pageId: { type: 'string', description: 'Page ID (default: main)' },
+            selector: { type: 'string', description: 'CSS selector of download link/button' }
+          },
+          required: ['selector']
         }
       },
 
@@ -312,43 +411,82 @@ export class MCPProxyServer extends EventEmitter {
   }
 
   /**
-   * 执行工具（暂时返回模拟结果）
+   * Execute tool and return result
    */
   private async executeTool(name: string, args: Record<string, unknown>): Promise<{
     content: Array<{ type: string; text: string }>
     metadata?: Record<string, unknown>
     isError?: boolean
   }> {
-    // TODO: Phase 3 实现实际执行逻辑
     switch (name) {
-      case 'browser_navigate':
-        return {
-          content: [{
-            type: 'text',
-            text: `Navigation to ${args.url as string} initiated (not yet implemented)`
-          }]
-        }
+      case 'browser_navigate': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().goto(pageId, args.url as string)
+        return this.mcpResult(result)
+      }
 
-      case 'browser_click':
-        return {
-          content: [{
-            type: 'text',
-            text: `Click on ${args.selector as string} initiated (not yet implemented)`
-          }]
-        }
+      case 'browser_click': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().click(pageId, args.selector as string)
+        return this.mcpResult(result)
+      }
 
-      case 'browser_screenshot':
-        return {
-          content: [{
-            type: 'text',
-            text: 'Screenshot captured (not yet implemented)'
-          }],
-          metadata: {
-            screenshot: 'base64-screenshot-data-placeholder'
-          }
-        }
+      case 'browser_fill': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().fill(pageId, args.selector as string, args.value as string)
+        return this.mcpResult(result)
+      }
 
-      case 'sandbox_read_file':
+      case 'browser_screenshot': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().screenshot(pageId)
+        return this.mcpResult(result)
+      }
+
+      case 'browser_text': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().getText(pageId, args.selector as string)
+        return this.mcpResult(result)
+      }
+
+      case 'browser_wait': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().waitFor(pageId, args.selector as string, args.timeout as number | undefined)
+        return this.mcpResult(result)
+      }
+
+      case 'browser_evaluate': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().evaluate(pageId, args.script as string)
+        return this.mcpResult(result)
+      }
+
+      case 'browser_cookies': {
+        const pageId = (args.pageId as string) || 'main'
+        const action = args.action as string
+        if (action === 'get') {
+          const result = await getBrowserManager().getCookies(pageId)
+          return this.mcpResult(result)
+        } else if (action === 'set') {
+          const result = await getBrowserManager().setCookie(pageId, args.cookie as any)
+          return this.mcpResult(result)
+        }
+        break
+      }
+
+      case 'browser_upload': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().upload(pageId, args.selector as string, args.filePath as string)
+        return this.mcpResult(result)
+      }
+
+      case 'browser_download': {
+        const pageId = (args.pageId as string) || 'main'
+        const result = await getBrowserManager().download(pageId, args.selector as string)
+        return this.mcpResult(result)
+      }
+
+      case 'sandbox_read_file': {
         const readResult = await this.operationExecutor.readFile(args.path as string)
         if (readResult.success) {
           return {
@@ -366,8 +504,9 @@ export class MCPProxyServer extends EventEmitter {
             isError: true
           }
         }
+      }
 
-      case 'sandbox_write_file':
+      case 'sandbox_write_file': {
         const writeResult = await this.operationExecutor.writeFile(
           args.path as string,
           args.content as string
@@ -389,8 +528,9 @@ export class MCPProxyServer extends EventEmitter {
             isError: true
           }
         }
+      }
 
-      case 'system_exec':
+      case 'system_exec': {
         const execResult = await this.operationExecutor.executeCommand(args.command as string)
         if (execResult.success) {
           const data = execResult.data
@@ -412,8 +552,9 @@ export class MCPProxyServer extends EventEmitter {
             isError: true
           }
         }
+      }
 
-      case 'sandbox_rollback':
+      case 'sandbox_rollback': {
         const rollbackResult = await this.operationExecutor.rollback(args.snapshotId as string)
         if (rollbackResult.success) {
           const data = rollbackResult.data
@@ -432,6 +573,7 @@ export class MCPProxyServer extends EventEmitter {
             isError: true
           }
         }
+      }
 
       default:
         return {
@@ -441,6 +583,31 @@ export class MCPProxyServer extends EventEmitter {
           }],
           isError: true
         }
+    }
+  }
+
+  /**
+   * Convert BrowserResult to MCP response format
+   */
+  private mcpResult(result: { success: boolean; data?: any; error?: string }): {
+    content: Array<{ type: string; text: string }>
+    isError?: boolean
+  } {
+    if (result.success) {
+      return {
+        content: [{
+          type: 'text',
+          text: result.data !== undefined ? JSON.stringify(result.data) : 'Operation completed successfully'
+        }]
+      }
+    } else {
+      return {
+        content: [{
+          type: 'text',
+          text: result.error || 'Operation failed'
+        }],
+        isError: true
+      }
     }
   }
 
