@@ -195,9 +195,9 @@ export class OperationExecutor {
   }
 
   /**
-   * 创建文件快照
+   * 创建文件快照并存储，返回快照ID
    */
-  private async createSnapshot(filePath: string): Promise<FileSnapshot> {
+  private async createSnapshot(filePath: string): Promise<string> {
     const snapshotId = `snapshot-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`
     const timestamp = Date.now()
 
@@ -214,9 +214,11 @@ export class OperationExecutor {
         size: content.length
       }
 
-      return snapshot
+      // 存储快照到内存
+      this.snapshots.set(snapshotId, snapshot)
+      return snapshotId
     } catch (error) {
-      // 文件不存在或无法读取
+      // 文件不存在或无法读取，存储空快照
       const snapshot: FileSnapshot = {
         type: 'file',
         path: filePath,
@@ -226,7 +228,9 @@ export class OperationExecutor {
         size: 0
       }
 
-      return snapshot
+      // 存储快照到内存
+      this.snapshots.set(snapshotId, snapshot)
+      return snapshotId
     }
   }
 }
