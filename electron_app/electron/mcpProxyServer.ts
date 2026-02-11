@@ -354,11 +354,26 @@ export class MCPProxyServer extends EventEmitter {
         }
 
       case 'sandbox_write_file':
-        return {
-          content: [{
-            type: 'text',
-            text: `Wrote ${(args.content as string)?.length || 0} bytes to ${args.path as string} (not yet implemented)`
-          }]
+        const writeResult = await this.operationExecutor.writeFile(
+          args.path as string,
+          args.content as string
+        )
+        if (writeResult.success) {
+          const data = writeResult.data
+          return {
+            content: [{
+              type: 'text',
+              text: `Successfully wrote ${data.bytesWritten} bytes to ${args.path as string}\nSnapshot ID: ${data.snapshotId}`
+            }]
+          }
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: writeResult.error || 'Failed to write file'
+            }],
+            isError: true
+          }
         }
 
       case 'system_exec':
