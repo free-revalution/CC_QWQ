@@ -451,25 +451,143 @@ export class BrowserManager {
   /**
    * 点击元素
    */
-  async click(): Promise<BrowserResult> {
-    // TODO: Task 6 - Implement click
-    throw new Error('Not implemented')
+  async click(pageId: string, selector: string): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Clicking element on page '${pageId}': ${selector}`)
+
+      await page.click(selector)
+
+      console.log(`[BrowserManager] Element clicked on page '${pageId}'`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to click element:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to click element: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 填写输入框
    */
-  async fill(): Promise<BrowserResult> {
-    // TODO: Task 6 - Implement fill
-    throw new Error('Not implemented')
+  async fill(pageId: string, selector: string, value: string): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Filling element on page '${pageId}': ${selector}`)
+
+      await page.fill(selector, value)
+
+      console.log(`[BrowserManager] Element filled on page '${pageId}'`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to fill element:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to fill element: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 获取元素文本
    */
-  async getText(): Promise<BrowserResult> {
-    // TODO: Task 6 - Implement get text
-    throw new Error('Not implemented')
+  async getText(pageId: string, selector: string): Promise<BrowserResult<string>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate selector
+    if (!selector || selector.trim().length === 0) {
+      return {
+        success: false,
+        error: 'Selector cannot be empty'
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Getting text from element on page '${pageId}': ${selector}`)
+
+      const text = await page.textContent(selector)
+
+      console.log(`[BrowserManager] Text retrieved from page '${pageId}'`)
+
+      return {
+        success: true,
+        data: text || ''
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to get text:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to get text: ${errorMessage}`
+      }
+    }
   }
 
   /**
