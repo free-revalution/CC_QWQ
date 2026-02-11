@@ -34,23 +34,23 @@ export class LogExporter {
 
     // 时间范围过滤
     if (options.timeRange) {
+      const { start, end } = options.timeRange
       filtered = filtered.filter(log =>
-        log.timestamp >= options.timeRange!.start &&
-        log.timestamp <= options.timeRange!.end
+        log.timestamp >= start && log.timestamp <= end
       )
     }
 
     // 工具过滤
     if (options.toolFilter && options.toolFilter.length > 0) {
       filtered = filtered.filter(log =>
-        log.tool && options.toolFilter!.includes(log.tool)
+        log.tool && options.toolFilter.includes(log.tool)
       )
     }
 
     // 状态过滤
     if (options.statusFilter && options.statusFilter.length > 0) {
       filtered = filtered.filter(log =>
-        options.statusFilter!.includes(log.status)
+        options.statusFilter.includes(log.status)
       )
     }
 
@@ -58,14 +58,25 @@ export class LogExporter {
   }
 
   /**
+   * 安全序列化对象（处理循环引用）
+   */
+  private safeStringify(obj: unknown): string {
+    try {
+      return JSON.stringify(obj, null, 2)
+    } catch {
+      return '[Cannot serialize: circular or invalid data]'
+    }
+  }
+
+  /**
    * 导出为 JSON
    */
   private exportJSON(logs: LogEntry[]): string {
-    return JSON.stringify({
+    return this.safeStringify({
       exportTime: new Date().toISOString(),
       totalOperations: logs.length,
       operations: logs
-    }, null, 2)
+    })
   }
 
   /**
@@ -82,7 +93,7 @@ export class LogExporter {
     ])
 
     const csvRows = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
+      .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
 
     return csvRows.join('\n')
   }
@@ -104,7 +115,7 @@ export class LogExporter {
       total: logs.length,
       byCategory: {} as Record<string, number>,
       byStatus: {} as Record<string, number>,
-      successRate: 0
+      successRate: '0' as string
     }
 
     logs.forEach(log => {
@@ -148,7 +159,7 @@ export class LogExporter {
         lines.push('')
         lines.push('**详情**:')
         lines.push('```')
-        lines.push(JSON.stringify(log.details, null, 2))
+        lines.push(this.safeStringify(log.details))
         lines.push('```')
       }
 
