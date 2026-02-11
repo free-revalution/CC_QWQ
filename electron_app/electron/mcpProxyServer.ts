@@ -16,6 +16,7 @@ import {
 import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operation.js'
 import type { ApprovalEngine } from './approvalEngine.js'
 import type { OperationLogger } from './operationLogger.js'
+import type { OperationExecutor } from './operationExecutor.js'
 
 const require = createRequire(import.meta.url)
 const express = require('express')
@@ -26,16 +27,19 @@ export class MCPProxyServer extends EventEmitter {
   private port: number
   private approvalEngine: ApprovalEngine
   private operationLogger: OperationLogger
+  private operationExecutor: OperationExecutor
 
   constructor(
     port: number,
     approvalEngine: ApprovalEngine,
-    operationLogger: OperationLogger
+    operationLogger: OperationLogger,
+    operationExecutor: OperationExecutor
   ) {
     super()
     this.port = port
     this.approvalEngine = approvalEngine
     this.operationLogger = operationLogger
+    this.operationExecutor = operationExecutor
   }
 
   /**
