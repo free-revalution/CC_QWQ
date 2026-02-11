@@ -349,17 +349,103 @@ export class BrowserManager {
   /**
    * 导航到 URL
    */
-  async goto(): Promise<BrowserResult> {
-    // TODO: Task 5 - Implement navigation
-    throw new Error('Not implemented')
+  async goto(pageId: string, url: string, options: NavigateOptions = {}): Promise<BrowserResult<void>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    // Validate URL
+    try {
+      new URL(url)
+    } catch {
+      return {
+        success: false,
+        error: `Invalid URL: ${url}`
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Navigating page '${pageId}' to: ${url}`)
+
+      const waitUntil = options.waitUntil || 'load'
+      const timeout = options.timeout || 30000
+
+      await page.goto(url, {
+        waitUntil,
+        timeout
+      })
+
+      console.log(`[BrowserManager] Navigation complete for page '${pageId}'`)
+
+      return {
+        success: true
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to navigate:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to navigate: ${errorMessage}`
+      }
+    }
   }
 
   /**
    * 截图
    */
-  async screenshot(): Promise<BrowserResult> {
-    // TODO: Task 5 - Implement screenshot
-    throw new Error('Not implemented')
+  async screenshot(pageId: string, options: ScreenshotOptions = {}): Promise<BrowserResult<string>> {
+    if (!this.isInitialized()) {
+      return {
+        success: false,
+        error: 'Browser not initialized'
+      }
+    }
+
+    const page = this.getPage(pageId)
+    if (!page) {
+      return {
+        success: false,
+        error: `Page not found: ${pageId}`
+      }
+    }
+
+    try {
+      console.log(`[BrowserManager] Taking screenshot of page '${pageId}'`)
+
+      const screenshot = await page.screenshot({
+        path: options.path,
+        type: options.type || 'png',
+        fullPage: options.fullPage || false
+      })
+
+      // 返回 base64 编码的图片
+      const base64 = screenshot.toString('base64')
+
+      console.log(`[BrowserManager] Screenshot taken for page '${pageId}' (${base64.length} bytes)`)
+
+      return {
+        success: true,
+        data: base64
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error('[BrowserManager] Failed to take screenshot:', errorMessage)
+      return {
+        success: false,
+        error: `Failed to take screenshot: ${errorMessage}`
+      }
+    }
   }
 
   /**
