@@ -3077,11 +3077,12 @@ app.on('ready', async () => {
       checkpointManager
     )
 
-    // 初始化 RollbackEngine（传入 CheckpointManager 和 snapshots）
+    // 初始化 RollbackEngine（传入 CheckpointManager 和 OperationExecutor）
     const rollbackEngine = new RollbackEngine(
       checkpointManager,
-      operationExecutor.getSnapshots()
+      operationExecutor
     )
+    // TODO: RollbackEngine will be used in Task 7 (IPC handlers)
 
     const mcpProxyServer = new MCPProxyServer(
       MCP_PROXY_PORT,

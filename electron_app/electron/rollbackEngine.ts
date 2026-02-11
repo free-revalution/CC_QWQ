@@ -8,11 +8,12 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import type { Checkpoint, FileSnapshot, RollbackResult, RollbackPreview } from '../src/types/operation.js'
 import type { CheckpointManager } from './checkpointManager.js'
+import type { OperationExecutor } from './operationExecutor.js'
 
 export class RollbackEngine {
   constructor(
     private checkpointManager: CheckpointManager,
-    private snapshots: Map<string, FileSnapshot>
+    private operationExecutor: OperationExecutor
   ) {}
 
   /**
@@ -34,8 +35,8 @@ export class RollbackEngine {
     // 按时间倒序回滚（避免依赖冲突）
     const entries = Array.from(checkpoint.fileSnapshots.entries())
       .sort(([, a], [, b]) => {
-        const snapshotA = this.snapshots.get(a)
-        const snapshotB = this.snapshots.get(b)
+        const snapshotA = this.operationExecutor.getSnapshots().get(a)
+        const snapshotB = this.operationExecutor.getSnapshots().get(b)
         return (snapshotB?.timestamp || 0) - (snapshotA?.timestamp || 0)
       })
 
@@ -59,7 +60,7 @@ export class RollbackEngine {
    * 回滚单个文件
    */
   async rollbackFile(filePath: string, snapshotId: string): Promise<RollbackResult> {
-    const snapshot = this.snapshots.get(snapshotId)
+    const snapshot = this.operationExecutor.getSnapshots().get(snapshotId)
 
     if (!snapshot) {
       return {
@@ -115,7 +116,7 @@ export class RollbackEngine {
     const warnings: string[] = []
 
     for (const [filePath, snapshotId] of checkpoint.fileSnapshots) {
-      const snapshot = this.snapshots.get(snapshotId)
+      const snapshot = this.operationExecutor.getSnapshots().get(snapshotId)
 
       if (!snapshot) {
         warnings.push(`Snapshot not found for ${filePath}`)

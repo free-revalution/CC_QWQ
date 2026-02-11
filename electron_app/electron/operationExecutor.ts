@@ -54,9 +54,10 @@ export class OperationExecutor {
 
   /**
    * 获取快照映射的公共方法
+   * Returns a copy to prevent external modification
    */
   getSnapshots(): Map<string, FileSnapshot> {
-    return this.snapshots
+    return new Map(this.snapshots)
   }
 
   /**
