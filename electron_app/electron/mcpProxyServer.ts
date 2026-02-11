@@ -274,6 +274,20 @@ export class MCPProxyServer extends EventEmitter {
           required: ['path', 'content']
         }
       },
+      {
+        name: 'sandbox_rollback',
+        description: 'Roll back a file to a previous snapshot',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            snapshotId: {
+              type: 'string',
+              description: 'Snapshot ID to rollback to'
+            }
+          },
+          required: ['snapshotId']
+        }
+      },
 
       // 系统工具
       {
@@ -394,6 +408,26 @@ export class MCPProxyServer extends EventEmitter {
             content: [{
               type: 'text',
               text: execResult.error || 'Failed to execute command'
+            }],
+            isError: true
+          }
+        }
+
+      case 'sandbox_rollback':
+        const rollbackResult = await this.operationExecutor.rollback(args.snapshotId as string)
+        if (rollbackResult.success) {
+          const data = rollbackResult.data
+          return {
+            content: [{
+              type: 'text',
+              text: `Successfully rolled back to snapshot ${args.snapshotId as string}\nFile: ${data.filePath}`
+            }]
+          }
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: rollbackResult.error || 'Failed to rollback'
             }],
             isError: true
           }
