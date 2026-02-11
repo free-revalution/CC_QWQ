@@ -4,7 +4,7 @@
  * 可折叠侧边面板，显示操作历史时间线
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Clock, CheckCircle, XCircle, AlertCircle, Hourglass, ChevronDown, ChevronRight } from 'lucide-react'
 import { ipc } from '../../lib/ipc'
 import type { LogEntry } from '../../types/operation'
