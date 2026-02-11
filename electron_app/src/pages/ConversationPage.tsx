@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle } from 'lucide-react'
+import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle, FileText } from 'lucide-react'
+import { List } from 'react-window'
 import Card from '../components/ui/Card'
 import MessageContent from '../components/ui/MessageContent'
 import FileReferenceMenu from '../components/ui/FileReferenceMenu'
@@ -7,6 +8,8 @@ import CommandMenu from '../components/ui/CommandMenu'
 import ModelSettings from '../components/ui/ModelSettings'
 import GitStatusPanel from '../components/ui/GitStatusPanel'
 import FileSearchPanel from '../components/ui/FileSearchPanel'
+import { OperationLogPanel } from '../components/ui/OperationLogPanel'
+import ActivityIndicator, { ActivityDot } from '../components/ui/ActivityIndicator'
 import { ipc } from '../lib/ipc'
 import {
   loadConversations,
@@ -17,6 +20,8 @@ import {
   setCurrentConversationId as saveCurrentConversationId,
 } from '../lib/storage'
 import type { Message, Conversation } from '../types'
+// Happy 架构改进类型
+import type { ActivityUpdate } from '../types/message'
 
 // 过滤模式类型
 export type FilterMode = 'talk' | 'develop'
@@ -66,6 +71,8 @@ export default function ConversationPage({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   // 上下文菜单引用 - 用于定位
   const menuRef = useRef<HTMLDivElement>(null)
+  // 消息容器引用 - 用于虚拟滚动计算高度
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   // 信任文件夹弹窗状态
   const [trustRequest, setTrustRequest] = useState<{ conversationId: string; projectPath: string; message: string } | null>(null)
@@ -107,9 +114,21 @@ export default function ConversationPage({
   // 文件搜索面板
   const [searchPanelVisible, setSearchPanelVisible] = useState(false)
 
+  // 操作日志面板
+  const [operationLogPanelVisible, setOperationLogPanelVisible] = useState(false)
+
   // 过滤模式：Talk（只显示回复文本）或 Develop（显示操作过程）
   const [filterMode, setFilterMode] = useState<FilterMode>('develop')
   const [modeDropdownOpen, setModeDropdownOpen] = useState(false)
+
+  // ==================== Happy 架构改进 - 活动状态 ====================
+  // 会话活动状态映射
+  const [sessionActivity, setSessionActivity] = useState<Map<string, {
+    active: boolean
+    activeAt: number
+    thinking: boolean
+    thinkingAt: number
+  }>>(new Map())
 
   // 当前正在处理的 Claude 消息 ID (assistantId) - 使用 ref 以避免异步状态更新问题
   const currentClaudeMessageIdRef = useRef<string | null>(null)
@@ -236,6 +255,30 @@ export default function ConversationPage({
         })
       })
     })
+    return () => {
+      if (cleanupId) {
+        ipc.removeListener(cleanupId)
+      }
+    }
+  }, [])
+
+  // ==================== Happy 架构改进 - 监听活动状态更新 ====================
+  // 监听来自主进程的活动状态更新
+  useEffect(() => {
+    const cleanupId = ipc.onActivityUpdate((update) => {
+      console.log('Received activity update:', update)
+      setSessionActivity(prev => {
+        const newMap = new Map(prev)
+        newMap.set(update.sessionId, {
+          active: update.active,
+          activeAt: update.activeAt,
+          thinking: update.thinking ?? false,
+          thinkingAt: update.thinkingAt ?? 0
+        })
+        return newMap
+      })
+    })
+
     return () => {
       if (cleanupId) {
         ipc.removeListener(cleanupId)
@@ -942,27 +985,29 @@ Is there something specific you'd like to know or modify about this project?`
     inputRef.current?.focus()
   }
 
-  // 处理文件上传
+  // 处理文件上传 - 使用新的 IPC 方法直接上传到对话
   const handleFileUpload = async () => {
+    if (!currentConversation || !projectPath) {
+      setError('请先选择或创建一个对话')
+      return
+    }
+
     try {
       const result = await ipc.selectFile()
       if (result.success && result.filePath) {
-        // 获取文件名
-        const fileName = result.filePath.split('/').pop() || result.filePath.split('\\').pop() || 'unknown'
+        setIsLoading(true)
+        // 使用新的 uploadFile IPC 方法直接上传到对话
+        const uploadResult = await ipc.uploadFile(result.filePath, currentConversation.id)
 
-        // 读取文件内容
-        const fs = await import('fs')
-        const content = fs.readFileSync(result.filePath, 'utf-8')
-
-        // 添加到附件列表
-        setAttachedFiles(prev => [...prev, {
-          name: fileName,
-          path: result.filePath!,
-          content
-        }])
+        if (!uploadResult.success) {
+          setError(uploadResult.error || '文件上传失败')
+        }
+        setIsLoading(false)
       }
     } catch (error) {
       console.error('Failed to upload file:', error)
+      setError('文件上传失败')
+      setIsLoading(false)
     }
   }
 
@@ -983,6 +1028,17 @@ Is there something specific you'd like to know or modify about this project?`
 
   // 判断是否为小屏幕
   const isSmallScreen = windowSize.width < BREAKPOINTS.md
+
+  // 虚拟滚动：估算消息高度（基于内容长度）
+  const estimateMessageHeight = useCallback((content: string, role: string): number => {
+    const baseHeight = role === 'user' ? 100 : 120
+    const contentLines = content.split('\n').length
+    const additionalHeight = Math.min(contentLines * 20, 300) // 最多增加 300px
+    return baseHeight + additionalHeight
+  }, [])
+
+  // 判断是否使用虚拟滚动（消息数 > 50）
+  const useVirtualScroll = (currentConversation?.messages.length || 0) > 50
 
   return (
     <div className="h-full w-full flex bg-background/50 relative overflow-hidden">
@@ -1039,7 +1095,7 @@ Is there something specific you'd like to know or modify about this project?`
               }`}
               title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             >
-              <ChevronLeft size={16} className={`transition-transform sm:size-18 ${sidebarCollapsed ? 'rotate-180' : ''}`} />
+              <ChevronLeft size={16} className={`transition-transform ${sidebarCollapsed ? 'rotate-180' : ''}`} />
             </button>
           )}
 
@@ -1112,8 +1168,14 @@ Is there something specific you'd like to know or modify about this project?`
                         {conv.isPinned && <Pin size={12} className="text-purple-500 flex-shrink-0" />}
                         {(!sidebarCollapsed || isSmallScreen) && conv.title}
                       </div>
+                      {/* Happy 架构改进 - 活动状态指示点 */}
+                      <ActivityDot
+                        active={sessionActivity.get(conv.id)?.active ?? false}
+                        thinking={sessionActivity.get(conv.id)?.thinking ?? false}
+                        className="flex-shrink-0"
+                      />
                       {/* 呼吸灯：根据初始化状态显示不同颜色 */}
-                      {conv.id === currentConversationId && (
+                      {conv.id === currentConversationId && !sessionActivity.get(conv.id)?.thinking && (
                         <div className={`
                           absolute top-3 right-3 sm:top-4 sm:right-4
                           w-2 h-2 rounded-full animate-pulse flex-shrink-0
@@ -1148,7 +1210,7 @@ Is there something specific you'd like to know or modify about this project?`
               className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
               title="New Conversation"
             >
-              <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300 sm:size-18 text-secondary hover:text-primary" />
+              <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300 text-secondary hover:text-primary" />
             </button>
             <button
               onClick={() => {
@@ -1158,7 +1220,7 @@ Is there something specific you'd like to know or modify about this project?`
               className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
               title="Back to Home"
             >
-              <Home size={16} className="transition-transform duration-300 sm:size-18 text-secondary hover:text-primary" />
+              <Home size={16} className="transition-transform duration-300 text-secondary hover:text-primary" />
             </button>
           </div>
         )}
@@ -1179,6 +1241,7 @@ Is there something specific you'd like to know or modify about this project?`
                 <Menu size={20} />
               </button>
             )}
+            {/* Happy 架构改进 - Claude 状态指示器 */}
             <div className={`
               w-2 h-2 rounded-full animate-pulse flex-shrink-0
               ${currentConversation?.claudeStatus === 'initializing'
@@ -1187,6 +1250,16 @@ Is there something specific you'd like to know or modify about this project?`
                   ? 'bg-green-500'
                   : 'bg-gray-500'}
             `} />
+            {/* Happy 架构改进 - 详细活动状态指示器 */}
+            {currentConversationId && (
+              <ActivityIndicator
+                active={sessionActivity.get(currentConversationId)?.active ?? false}
+                thinking={sessionActivity.get(currentConversationId)?.thinking ?? false}
+                activeAt={sessionActivity.get(currentConversationId)?.activeAt}
+                thinkingAt={sessionActivity.get(currentConversationId)?.thinkingAt}
+                className="text-xs"
+              />
+            )}
             <span className="text-xs sm:text-sm text-secondary/80 font-mono truncate">
               {projectPath}
             </span>
@@ -1197,7 +1270,7 @@ Is there something specific you'd like to know or modify about this project?`
             className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             title="Git Status"
           >
-            <GitBranch size={16} className="sm:size-18" />
+            <GitBranch size={16} />
           </button>
           <button
             onClick={() => setSearchPanelVisible(true)}
@@ -1205,19 +1278,27 @@ Is there something specific you'd like to know or modify about this project?`
             className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             title="Search Files"
           >
-            <Search size={16} className="sm:size-18" />
+            <Search size={16} />
+          </button>
+          <button
+            onClick={() => setOperationLogPanelVisible(true)}
+            disabled={!projectPath}
+            className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Operation Logs"
+          >
+            <FileText size={16} />
           </button>
           <button
             onClick={onOpenSettings}
             className="p-2 sm:p-2.5 rounded-xl glass-button hover:bg-white/20 transition-all"
             title="Settings"
           >
-            <Settings size={16} className="sm:size-18" />
+            <Settings size={16} />
           </button>
         </div>
 
         {/* 对话消息区域 - 响应式 */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+        <div ref={messagesContainerRef} className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
           {error && (
             <Card className="p-3 sm:p-4 bg-red-500/10 border-red-500/20">
               <div className="flex items-start gap-2 sm:gap-3">
@@ -1242,7 +1323,52 @@ Is there something specific you'd like to know or modify about this project?`
                 </p>
               </div>
             </div>
+          ) : useVirtualScroll ? (
+            // 虚拟滚动：消息数 > 50 时使用
+            <List
+              height={messagesContainerRef.current?.clientHeight || 600}
+              itemCount={currentConversation?.messages.length || 0}
+              itemSize={(index: number) => {
+                const msg = currentConversation?.messages[index]
+                if (!msg) return 120
+                return estimateMessageHeight(msg.content, msg.role)
+              }}
+              width="100%"
+            >
+              {/* @ts-ignore - react-window types issue */}
+              {({ index, style }: { index: number; style: React.CSSProperties }) => {
+                const msg = currentConversation?.messages[index]
+                if (!msg) return null
+
+                return (
+                  <div style={style} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <Card
+                      className={`max-w-[85%] sm:max-w-2xl min-w-[120px] p-3 sm:p-5 break-words whitespace-pre-wrap ${
+                        msg.role === 'user'
+                          ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20'
+                          : 'glass-card'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2 sm:mb-3">
+                        <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
+                          msg.role === 'user'
+                            ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white'
+                            : 'bg-gradient-to-br from-gray-100 to-gray-200 text-primary'
+                        }`}>
+                          {msg.role === 'user' ? 'U' : 'C'}
+                        </div>
+                        <span className="text-xs sm:text-sm text-secondary font-medium">
+                          {msg.role === 'user' ? 'You' : 'Claude'}
+                        </span>
+                      </div>
+                      <MessageContent content={msg.content} />
+                    </Card>
+                  </div>
+                )
+              }}
+            </List>
           ) : (
+            // 普通渲染：消息数 <= 50 时使用（带动画）
             currentConversation?.messages.map((msg, index) => (
               <div
                 key={msg.id}
@@ -1284,7 +1410,7 @@ Is there something specific you'd like to know or modify about this project?`
                     C
                   </div>
                   <div className="flex items-center gap-2 sm:gap-3 text-secondary">
-                    <Loader2 size={16} className="sm:size-18 animate-spin" />
+                    <Loader2 size={16} className="animate-spin" />
                     <span className="text-sm">Claude is thinking...</span>
                   </div>
                 </div>
@@ -1401,7 +1527,7 @@ Is there something specific you'd like to know or modify about this project?`
                   title="Send"
                 >
                   {isLoading ? (
-                    <Loader2 size={16} className="sm:size-18 animate-spin" />
+                    <Loader2 size={16} className="animate-spin" />
                   ) : (
                     <img src="/箭头上_arrow-up.svg" alt="Send" className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
                   )}
@@ -1606,6 +1732,21 @@ Is there something specific you'd like to know or modify about this project?`
           inputRef.current?.focus()
         }}
       />
+
+      {/* 操作日志面板 */}
+      {operationLogPanelVisible && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          onClick={() => setOperationLogPanelVisible(false)}
+        >
+          <div
+            className="glass-card rounded-2xl p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-hidden shadow-2xl animate-fadeIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <OperationLogPanel />
+          </div>
+        </div>
+      )}
 
       {/* 重命名弹窗 */}
       {renameDialog.visible && (
