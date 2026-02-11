@@ -159,6 +159,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return cleanupId
   },
 
+  // ==================== 检查点管理 ====================
+
+  // 检查点相关
+  checkpointList: () => ipcRenderer.invoke('checkpoint-list'),
+
+  checkpointGet: (id) => ipcRenderer.invoke('checkpoint-get', id),
+
+  checkpointCreate: (name, description) => ipcRenderer.invoke('checkpoint-create', name, description),
+
+  // ==================== 回滚管理 ====================
+
+  // 回滚相关
+  rollbackPreview: (checkpointId) => ipcRenderer.invoke('rollback-preview', checkpointId),
+
+  rollbackExecute: (checkpointId) => ipcRenderer.invoke('rollback-execute', checkpointId),
+
+  // ==================== 导出日志（新版本） ====================
+
+  // 导出日志（新版本，支持 JSON/CSV/Markdown 格式）
+  exportLogsV2: (options) => ipcRenderer.invoke('export-logs-v2', options),
+
   // 移除监听器
   removeListener: (cleanupId) => {
     const cleanup = listenerCleanup.get(cleanupId)
