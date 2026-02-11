@@ -89,8 +89,82 @@ export class OperationExecutor {
    * 执行系统命令
    */
   async executeCommand(command: string): Promise<ExecutionResult> {
-    // 实现将在后续步骤完成
-    return { success: false, error: 'Not implemented' }
+    return new Promise((resolve) => {
+      try {
+        // 获取权限配置
+        const permission = this.getToolPermission('system_exec')
+
+        if (!permission) {
+          resolve({ success: false, error: 'Command execution not configured' })
+          return
+        }
+
+        // 简单的命令注入检查
+        const dangerousChars = [';', '|', '&', '`', '$', '(', ')', '\n', '\r']
+        const hasDangerousChar = dangerousChars.some(char => command.includes(char))
+
+        if (hasDangerousChar) {
+          resolve({ success: false, error: 'Command contains dangerous characters' })
+          return
+        }
+
+        // 解析命令
+        const parts = command.trim().split(/\s+/)
+        const cmd = parts[0]
+        const args = parts.slice(1)
+
+        // 执行命令
+        const proc = spawn(cmd, args, {
+          cwd: process.cwd(),
+          env: { ...process.env, PATH: process.env.PATH }
+        })
+
+        let stdout = ''
+        let stderr = ''
+
+        proc.stdout?.on('data', (data) => {
+          stdout += data.toString()
+        })
+
+        proc.stderr?.on('data', (data) => {
+          stderr += data.toString()
+        })
+
+        // 超时控制（60秒）
+        const timeout = setTimeout(() => {
+          proc.kill()
+          resolve({
+            success: false,
+            error: 'Command timed out after 60 seconds'
+          })
+        }, 60000)
+
+        proc.on('close', (code) => {
+          clearTimeout(timeout)
+          resolve({
+            success: code === 0,
+            data: {
+              exitCode: code,
+              stdout: stdout.trim(),
+              stderr: stderr.trim()
+            }
+          })
+        })
+
+        proc.on('error', (error) => {
+          clearTimeout(timeout)
+          resolve({
+            success: false,
+            error: `Failed to execute command: ${error.message}`
+          })
+        })
+      } catch (error) {
+        resolve({
+          success: false,
+          error: `Command execution error: ${(error as Error).message}`
+        })
+      }
+    })
   }
 
   /**
