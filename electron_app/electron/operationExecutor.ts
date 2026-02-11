@@ -53,6 +53,13 @@ export class OperationExecutor {
   ) {}
 
   /**
+   * 获取快照映射的公共方法
+   */
+  getSnapshots(): Map<string, FileSnapshot> {
+    return this.snapshots
+  }
+
+  /**
    * 读取文件（沙盒限制）
    */
   async readFile(filePath: string): Promise<ExecutionResult> {

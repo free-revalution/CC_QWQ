@@ -7,6 +7,9 @@ import type { IPty } from 'node-pty'
 import { OperationLogger } from './operationLogger.js'
 import { ApprovalEngine } from './approvalEngine.js'
 import { OperationExecutor } from './operationExecutor.js'
+import { CheckpointManager } from './checkpointManager.js'
+import { RollbackEngine } from './rollbackEngine.js'
+import { LogExporter } from './logExporter.js'
 import { MCPProxyServer } from './mcpProxyServer.js'
 import { getBrowserManager } from './browserManager.js'
 import type { LogFilter } from '../src/types/operation.js'
@@ -3065,9 +3068,19 @@ app.on('ready', async () => {
   // 启动 MCP 代理服务器
   const MCP_PROXY_PORT = 3010
   try {
-    // 操作执行器
+    // 初始化 CheckpointManager
+    const checkpointManager = new CheckpointManager(50, 7)
+
+    // 初始化 OperationExecutor（传入 CheckpointManager）
     const operationExecutor = new OperationExecutor(
-      (tool: string) => approvalEngine.getToolConfig(tool)
+      (tool: string) => approvalEngine.getToolConfig(tool),
+      checkpointManager
+    )
+
+    // 初始化 RollbackEngine（传入 CheckpointManager 和 snapshots）
+    const rollbackEngine = new RollbackEngine(
+      checkpointManager,
+      operationExecutor.getSnapshots()
     )
 
     const mcpProxyServer = new MCPProxyServer(
