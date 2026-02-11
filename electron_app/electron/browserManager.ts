@@ -648,6 +648,20 @@ export class BrowserManager {
 
   /**
    * 执行 JavaScript
+   *
+   * ⚠️ SECURITY WARNING: This method uses eval() to execute arbitrary JavaScript code.
+   * - NEVER expose this method to untrusted input
+   * - Always validate and sanitize script input before calling
+   * - This method can execute ANY JavaScript code in the browser context
+   * - Use with extreme caution in production environments
+   *
+   * Note: eval() is necessary here to provide dynamic JavaScript execution capabilities
+   * for browser automation. This is an acceptable use case for a development/automation tool,
+   * but requires careful input validation and should never be exposed to untrusted users.
+   *
+   * @param pageId - Page ID
+   * @param script - JavaScript code to execute (will be eval'd)
+   * @returns Result of script execution
    */
   async evaluate(pageId: string, script: string): Promise<BrowserResult<any>> {
     if (!this.isInitialized()) {
