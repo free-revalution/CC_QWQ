@@ -184,27 +184,36 @@ export class OperationExecutor {
         return { success: false, error: `Access denied: path not in allowed sandbox` }
       }
 
+      // 计算实际字节大小
+      const actualSize = Buffer.byteLength(content, 'utf-8')
+
       // 检查文件大小限制
       const maxSize = permission.sandboxConstraints.maxFileSize || 10 * 1024 * 1024
-      if (content.length > maxSize) {
+      if (actualSize > maxSize) {
         return {
           success: false,
-          error: `File too large: ${content.length} bytes (max: ${maxSize} bytes)`
+          error: `File too large: ${actualSize} bytes (max: ${maxSize} bytes)`
         }
       }
 
       // 创建快照
       const snapshotId = await this.createSnapshot(filePath)
 
-      // 写入文件
-      await fs.writeFile(filePath, content, 'utf-8')
+      try {
+        // 写入文件
+        await fs.writeFile(filePath, content, 'utf-8')
 
-      return {
-        success: true,
-        data: {
-          bytesWritten: content.length,
-          snapshotId
+        return {
+          success: true,
+          data: {
+            bytesWritten: actualSize,
+            snapshotId
+          }
         }
+      } catch (writeError) {
+        // 写入失败，清理快照
+        this.snapshots.delete(snapshotId)
+        throw writeError
       }
     } catch (error) {
       return {
