@@ -4,8 +4,9 @@
  * 自动为文件写入操作创建检查点，管理检查点生命周期
  */
 
+import * as path from 'path'
 import { randomUUID } from 'crypto'
-import type { Checkpoint, FileSnapshot } from '../src/types/operation.js'
+import type { Checkpoint } from '../src/types/operation.js'
 
 export class CheckpointManager {
   private checkpoints: Map<string, Checkpoint> = new Map()
@@ -35,7 +36,7 @@ export class CheckpointManager {
     const name = `checkpoint-${year}${month}${day}-${hours}${minutes}${seconds}`
 
     // 从路径提取文件名
-    const fileName = filePath.split('/').pop() || filePath
+    const fileName = path.basename(filePath)
     const description = `Auto: Write ${fileName}`
 
     const checkpoint: Checkpoint = {
@@ -47,6 +48,7 @@ export class CheckpointManager {
     }
 
     this.checkpoints.set(checkpoint.id, checkpoint)
+    console.log(`[Checkpoint] Created: ${name} (${checkpoint.id})`)
 
     // 清理过期检查点
     this.cleanup()
@@ -65,8 +67,8 @@ export class CheckpointManager {
   /**
    * 获取单个检查点
    */
-  get(id: string): Checkpoint | null {
-    return this.checkpoints.get(id) || null
+  get(id: string): Checkpoint | undefined {
+    return this.checkpoints.get(id)
   }
 
   /**
@@ -82,6 +84,7 @@ export class CheckpointManager {
     }
 
     this.checkpoints.set(checkpoint.id, checkpoint)
+    console.log(`[Checkpoint] Created: ${name} (${checkpoint.id})`)
     this.cleanup()
 
     return checkpoint
@@ -91,7 +94,11 @@ export class CheckpointManager {
    * 删除检查点
    */
   delete(id: string): boolean {
-    return this.checkpoints.delete(id)
+    const deleted = this.checkpoints.delete(id)
+    if (deleted) {
+      console.log(`[Checkpoint] Deleted: ${id}`)
+    }
+    return deleted
   }
 
   /**
@@ -116,11 +123,13 @@ export class CheckpointManager {
    */
   private cleanup(): void {
     const now = Date.now()
+    let removedCount = 0
 
     // 删除过期检查点
     for (const [id, checkpoint] of this.checkpoints.entries()) {
       if (now - checkpoint.timestamp > this.maxAge) {
         this.checkpoints.delete(id)
+        removedCount++
       }
     }
 
@@ -132,7 +141,12 @@ export class CheckpointManager {
       const toDelete = sorted.slice(0, this.checkpoints.size - this.maxCheckpoints)
       for (const [id] of toDelete) {
         this.checkpoints.delete(id)
+        removedCount++
       }
+    }
+
+    if (removedCount > 0) {
+      console.log(`[Checkpoint] Cleanup: removed ${removedCount} old/excess checkpoints`)
     }
   }
 }
