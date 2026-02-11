@@ -335,11 +335,22 @@ export class MCPProxyServer extends EventEmitter {
         }
 
       case 'sandbox_read_file':
-        return {
-          content: [{
-            type: 'text',
-            text: `File content from ${args.path as string} (not yet implemented)`
-          }]
+        const readResult = await this.operationExecutor.readFile(args.path as string)
+        if (readResult.success) {
+          return {
+            content: [{
+              type: 'text',
+              text: readResult.data.content
+            }]
+          }
+        } else {
+          return {
+            content: [{
+              type: 'text',
+              text: readResult.error || 'Failed to read file'
+            }],
+            isError: true
+          }
         }
 
       case 'sandbox_write_file':
