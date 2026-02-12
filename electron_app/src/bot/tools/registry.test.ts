@@ -6,10 +6,9 @@ import {
   formatToolDetail,
   needsDesktopHandling,
   shouldTruncateOutput,
-  extractToolKeyInfo,
-  type ToolCallMessage
+  extractToolKeyInfo
 } from './registry'
-import type { BashToolInput, EditToolInput, WriteToolInput, TodoWriteToolInput } from '../types/messages'
+import type { ToolCallMessage, BashToolInput, EditToolInput, WriteToolInput, TodoWriteToolInput } from '../types/messages'
 
 describe('Tool View Registry', () => {
   const createMockTool = (
@@ -209,6 +208,104 @@ describe('Tool View Registry', () => {
       const info = extractToolKeyInfo(tool)
 
       expect(info).toBeNull()
+    })
+  })
+
+  describe('formatToolForChat - Write Tool', () => {
+    it('should format write tool summary', () => {
+      const tool = createMockTool('write', 'running', {
+        path: '/tmp/test.txt',
+        content: 'hello world'
+      })
+      const formatted = formatToolForChat(tool)
+
+      expect(formatted).toContain('写入')
+      expect(formatted).toContain('test.txt')
+    })
+  })
+
+  describe('formatToolForChat - TodoWrite Tool', () => {
+    it('should format todo write summary with count', () => {
+      const tool = createMockTool('TodoWrite', 'completed', {
+        todos: [
+          { status: 'completed', priority: 'high', content: 'Task 1' },
+          { status: 'pending', priority: 'medium', content: 'Task 2' },
+          { status: 'pending', priority: 'low', content: 'Task 3' }
+        ]
+      })
+      const formatted = formatToolForChat(tool)
+
+      expect(formatted).toContain('任务列表')
+      expect(formatted).toContain('3 项')
+    })
+  })
+
+  describe('formatToolForChat - Task Tool', () => {
+    it('should format task tool summary', () => {
+      const tool = createMockTool('Task', 'running', {
+        goal: 'Implement feature X'
+      })
+      const formatted = formatToolForChat(tool)
+
+      expect(formatted).toContain('子任务')
+    })
+  })
+
+  describe('formatToolStateChange - Task Tool', () => {
+    it('should format task tool running state', () => {
+      const tool = createMockTool('Task', 'running', {
+        goal: 'Complex task'
+      })
+      const formatted = formatToolStateChange(tool)
+
+      expect(formatted).toContain('子任务')
+      expect(formatted).toContain('运行中')
+    })
+
+    it('should format task tool completed state', () => {
+      const tool = createMockTool('Task', 'completed', {
+        goal: 'Complex task'
+      })
+      const formatted = formatToolStateChange(tool)
+
+      expect(formatted).toContain('子任务')
+    })
+  })
+
+  describe('formatToolDetail - Write Tool', () => {
+    it('should format write tool detail with content preview', () => {
+      const content = 'Line 1\nLine 2\nLine 3'
+      const tool = createMockTool('write', 'running', {
+        path: '/path/to/file.md',
+        content
+      })
+      const formatted = formatToolDetail(tool)
+
+      expect(formatted).toContain('file.md')
+      expect(formatted).toContain('内容预览')
+      expect(formatted).toContain('Line 1')
+    })
+  })
+
+  describe('needsDesktopHandling - Additional Tests', () => {
+    it('should return false for write tool', () => {
+      const tool = createMockTool('write', 'running', {
+        path: '/tmp/test.txt',
+        content: 'test'
+      })
+      const needsDesktop = needsDesktopHandling(tool)
+
+      expect(needsDesktop).toBe(false)
+    })
+
+    it('should return false for edit tool', () => {
+      const tool = createMockTool('str_replace_editor', 'running', {
+        command: 'edit',
+        path: '/path/to/file.ts'
+      })
+      const needsDesktop = needsDesktopHandling(tool)
+
+      expect(needsDesktop).toBe(false)
     })
   })
 })
