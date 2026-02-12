@@ -22,6 +22,10 @@ export interface BaseMessage {
   timestamp: number;
   platform: 'whatsapp' | 'feishu';
   conversationId: string;
+  // Properties common to all message types
+  isError?: boolean;
+  summary?: string;
+  fullOutput?: string;
 }
 
 // User text message
@@ -52,6 +56,86 @@ export type PermissionStatus = 'pending' | 'approved' | 'denied' | 'canceled';
 
 // Permission decision type
 export type PermissionDecision = 'approved' | 'approved_for_session' | 'denied' | 'abort';
+
+// Tool input types
+export interface BashToolInput {
+  command?: string;
+  cmd?: string;
+  cwd?: string;
+  timeout?: number;
+  [key: string]: unknown;
+}
+
+export interface EditToolInput {
+  command?: string;
+  path?: string;
+  file_path?: string;
+  old_str?: string;
+  new_str?: string;
+  [key: string]: unknown;
+}
+
+export interface WriteToolInput {
+  path?: string;
+  content?: string;
+  [key: string]: unknown;
+}
+
+export interface TodoWriteToolInput {
+  todos?: Array<{
+    status: 'pending' | 'in_progress' | 'completed';
+    priority: 'high' | 'medium' | 'low';
+    content: string;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface TaskToolInput {
+  goal?: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+export interface MCPToolInput {
+  [key: string]: unknown;
+}
+
+// Tool result types
+export interface BashToolResult {
+  exit_code?: number;
+  stdout?: string;
+  stderr?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface EditToolResult {
+  success?: boolean;
+  error?: string;
+  [key: string]: unknown;
+}
+
+export interface WriteToolResult {
+  success?: boolean;
+  path?: string;
+  [key: string]: unknown;
+}
+
+// Union type for all tool inputs
+export type ToolInput =
+  | BashToolInput
+  | EditToolInput
+  | WriteToolInput
+  | TodoWriteToolInput
+  | TaskToolInput
+  | MCPToolInput;
+
+// Union type for all tool results
+export type ToolResult =
+  | BashToolResult
+  | EditToolResult
+  | WriteToolResult
+  | unknown;
 
 // Tool call message
 export interface ToolCallMessage extends BaseMessage {
@@ -171,5 +255,5 @@ export function isEventMessage(msg: Message): msg is EventMessage {
 }
 
 export function isErrorMessage(msg: Message): msg is ErrorMessage {
-  return msg.kind === 'error';
+  return msg.kind === 'error' && msg.isError !== false;
 }

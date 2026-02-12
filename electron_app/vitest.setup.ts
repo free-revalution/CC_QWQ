@@ -1,10 +1,4 @@
 import { vi } from 'vitest'
-import { cleanup } from '@testing-library/dom'
-
-// Cleanup after each test
-afterEach(() => {
-  cleanup()
-})
 
 // Mock window.electronAPI with all methods
 const mockElectronAPI = {
