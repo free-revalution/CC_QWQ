@@ -1366,42 +1366,43 @@ Is there something specific you'd like to know or modify about this project?`
               height={messagesContainerRef.current?.clientHeight || 600}
               itemCount={currentConversation?.messages.length || 0}
               itemSize={(index: number) => {
-                const msg = currentConversation?.messages[index]
-                if (!msg) return 120
-                return estimateMessageHeight(msg.content, msg.role)
+                const message = currentConversation?.messages[index];
+                if (!message) return 120;
+                return estimateMessageHeight(message.content, message.role);
               }}
               width="100%"
             >
-              {(props: { index: number; style: React.CSSProperties }) => {
-                const { index, style } = props
-                const msg = currentConversation?.messages[index]
-                if (!msg) return null
+              {/* @ts-expect-error react-window类型定义与版本不兼容 */}
+              {(props: any) => {
+                const { rowIndex, style }: { rowIndex: number; style: React.CSSProperties } = props;
+                const message = currentConversation?.messages[rowIndex];
+                if (!message) return <></>;
 
                 return (
-                  <div style={style} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div style={style} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <Card
                       className={`max-w-[85%] sm:max-w-2xl min-w-[120px] p-3 sm:p-5 break-words whitespace-pre-wrap ${
-                        msg.role === 'user'
+                        message.role === 'user'
                           ? 'bg-gradient-to-br from-blue-500/20 to-purple-500/20'
                           : 'glass-card'
                       }`}
                     >
                       <div className="flex items-center gap-2 mb-2 sm:mb-3">
                         <div className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full flex items-center justify-center text-xs font-semibold ${
-                          msg.role === 'user'
+                          message.role === 'user'
                             ? 'bg-gradient-to-br from-blue-500 to-purple-500 text-white'
                             : 'bg-gradient-to-br from-gray-100 to-gray-200 text-primary'
                         }`}>
-                          {msg.role === 'user' ? 'U' : 'C'}
+                          {message.role === 'user' ? 'U' : 'C'}
                         </div>
                         <span className="text-xs sm:text-sm text-secondary font-medium">
-                          {msg.role === 'user' ? 'You' : 'Claude'}
+                          {message.role === 'user' ? 'You' : 'Claude'}
                         </span>
                       </div>
-                      <MessageContent content={msg.content} />
+                      <MessageContent content={message.content} />
                     </Card>
                   </div>
-                )
+                );
               }}
             </List>
           ) : (

@@ -15,7 +15,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js'
 import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operation.js'
 import type { ApprovalEngine } from './approvalEngine.js'
-import type { OperationLogger } from './operationLogger.js'
+import type { OperationLogger } from './operationLogger'
 import type { OperationExecutor } from './operationExecutor.js'
 import type { Server as HttpServer } from 'http'
 import { getBrowserManager } from './browserManager.js'
@@ -468,7 +468,7 @@ export class MCPProxyServer extends EventEmitter {
           const result = await getBrowserManager().getCookies(pageId)
           return this.mcpResult(result)
         } else if (action === 'set') {
-          const result = await getBrowserManager().setCookie(pageId, args.cookie as any)
+          const result = await getBrowserManager().setCookie(pageId, args.cookie as unknown)
           return this.mcpResult(result)
         }
         break
@@ -589,7 +589,7 @@ export class MCPProxyServer extends EventEmitter {
   /**
    * Convert BrowserResult to MCP response format
    */
-  private mcpResult(result: { success: boolean; data?: any; error?: string }): {
+  private mcpResult(result: { success: boolean; data?: unknown; error?: string }): {
     content: Array<{ type: string; text: string }>
     isError?: boolean
   } {

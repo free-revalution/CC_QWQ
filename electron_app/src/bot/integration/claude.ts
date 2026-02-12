@@ -37,7 +37,6 @@ export class ClaudeIntegration {
   private currentConversation: string | null = null; // 当前对话 ID
   private currentProject: string | null = null; // 当前项目路径
   private platform: 'whatsapp' | 'feishu'; // 平台
-  private permissionTimeoutMs: number = 5 * 60 * 1000; // 5 minutes default
   private cleanupInterval: NodeJS.Timeout | null = null; // 清理间隔
 
   // 清理过期权限的间隔
@@ -74,7 +73,7 @@ export class ClaudeIntegration {
    * Process incoming Claude stream
    */
   async processStream(data: unknown): Promise<Message[]> {
-    const result = messageReducer(this.state, [data], null);
+    const result = messageReducer(this.state, [data as import('../reducer/reducer').ClaudeRawMessage], null);
 
     if (result.permissions.length > 0) {
       // Handle permissions - send to chat

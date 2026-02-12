@@ -5,7 +5,7 @@
  * based on Happy's design principles.
  */
 
-import type { Message, ToolCallMessage, PermissionMessage } from '../types/messages';
+import type { Message, PermissionMessage } from '../types/messages';
 import {
   isUserTextMessage, isAgentTextMessage, isToolCallMessage,
   isToolResultMessage, isPermissionMessage, isEventMessage, isErrorMessage
@@ -86,14 +86,16 @@ function formatAgentMessage(message: Message, options: FormatOptions): string {
 
   // Metadata footer
   if (!options.compact && message.metadata) {
-    output += '\n\n━━━━━━━━━━━━━━';
+    output += '\n\n━━━━━━━━━━━━';
     if (message.metadata.model) {
       output += `\n📊 模型: ${message.metadata.model}`;
     }
     if (message.metadata.tokensUsed) {
       output += ` | 用量: ${message.metadata.tokensUsed} tokens`;
     }
-  } else if (!message.isStreaming) {
+  }
+
+  if (!message.isStreaming) {
     output += `\n\n✅ 回复完成`;
   }
 
@@ -158,10 +160,9 @@ function formatToolResultMessage(message: Message, options: FormatOptions): stri
   if (message.fullOutput) {
     const outputLen = message.fullOutput.length;
     const maxLength = options.platform === 'whatsapp' ? 500 : 2000;
-
     if (outputLen > maxLength) {
       output += `\n\n┌────────────────────┐`;
-      output += `\n│ 输出过长 (${outputLen} 字符)  │`;
+      output += `\n│ 输出过长 (${outputLen} 字符) │`;
       output += `\n│ 回复 /full 查看完整输出 │`;
       output += `\n└────────────────────┘`;
     }
@@ -177,15 +178,15 @@ function formatPermissionMessage(message: Message, options: FormatOptions): stri
   if (!isPermissionMessage(message)) return '';
 
   const perm = message.permission;
-  let text = `🔔 权限请求\n\n`;
-  text += `工具: ${perm.toolName}\n`;
+  let text = `🔔 *权限请求*\n\n`;
+  text += `**工具:** \`${perm.toolName}\`\n`;
 
   // Format input
   const input = JSON.stringify(perm.input, null, 2);
-  const maxLength = options.platform === 'whatsapp' ? 200 : 500;
+  const maxLength = options.platform === 'whatsapp' ? 150 : 300;
   const shortInput = input.length > maxLength ?
     input.substring(0, maxLength) + '\n...' : input;
-  text += `\n详情:\n${shortInput}\n`;
+  text += `**详情:** \n\`\`\n${shortInput}\n\`\`\n`;
 
   // Actions
   if (message.actions && message.actions.length > 0) {
@@ -195,13 +196,23 @@ function formatPermissionMessage(message: Message, options: FormatOptions): stri
     });
   }
 
+  // Status
+  if (perm.status === 'pending') {
+    text += `\n⏳ 等待批准...`;
+  } else if (perm.status === 'approved') {
+    text += `\n✅ 已批准`;
+  } else if (perm.status === 'denied') {
+    text += `\n❌ 已拒绝`;
+  }
+
   return truncateIfNeeded(text, options);
 }
 
 /**
  * Format event message
  */
-function formatEventMessage(message: Message): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function formatEventMessage(message: Message, _options: FormatOptions): string {
   if (!isEventMessage(message)) return '';
 
   const event = message.event;
@@ -209,19 +220,14 @@ function formatEventMessage(message: Message): string {
   switch (event.type) {
     case 'ready':
       return `✅ Claude Code 已就绪`;
-
     case 'mode_switch':
-      return `🔄 模式切换: ${event.data?.mode || event.message || ''}`;
-
+      return `🔄 模式切换: ${event.data?.mode ?? event.message ?? ''}`;
     case 'context_reset':
       return `🔄 上下文已重置`;
-
     case 'compaction':
       return `📝 对话已压缩`;
-
     case 'error':
-      return `❌ 错误: ${event.message || event.data || ''}`;
-
+      return `❌ 错误: ${event.message ?? event.data?.toString() ?? ''}`;
     default:
       if (event.message) {
         return `ℹ️ ${event.message}`;
@@ -240,7 +246,7 @@ function formatErrorMessage(message: Message, options: FormatOptions): string {
   output += `${message.error.message}\n`;
 
   if (message.error.details) {
-    output += `\n详情: ${JSON.stringify(message.error.details, null, 2)}`;
+    output += `\n详情: ${JSON.stringify(message.error.details, null, 2)}\n`;
   }
 
   if (message.recoverable) {
@@ -287,15 +293,24 @@ export function formatPermissionRequest(permission: PermissionMessage, platform:
   let text = `🔔 *权限请求*\n\n`;
   text += `**工具:** \`${perm.toolName}\`\n`;
 
+  // Format input
   const input = JSON.stringify(perm.input, null, 2);
   const maxLen = platform === 'whatsapp' ? 150 : 300;
-  const shortInput = input.length > maxLen ? input.substring(0, maxLen) + '...' : input;
-
+  const shortInput = input.length > maxLen ?
+    input.substring(0, maxLen) + '\n...' : input;
   text += `**详情:** \n\`\`\n${shortInput}\n\`\`\n`;
 
+  // Actions
+  if (permission.actions && permission.actions.length > 0) {
+    text += `\n可用操作:\n`;
+    permission.actions.forEach(action => {
+      text += `• ${action.label}: ${action.command}\n`;
+    });
+  }
+
+  // Status
   if (perm.status === 'pending') {
-    text += `\n回复 _/approve_ 批准`;
-    text += `\n回复 _/deny_ 拒绝`;
+    text += `\n⏳ 等待批准...`;
   } else if (perm.status === 'approved') {
     text += `\n✅ 已批准`;
   } else if (perm.status === 'denied') {
@@ -306,40 +321,25 @@ export function formatPermissionRequest(permission: PermissionMessage, platform:
 }
 
 /**
- * Format tool execution result
+ * Get command help text
  */
-export function formatToolExecutionResult(tool: ToolCallMessage['tool'], _platform: 'whatsapp' | 'feishu', result?: unknown): string {
-  let output = '';
-
-  if (tool.state === 'completed') {
-    output += `✅ *${tool.name}* 完成`;
-  } else if (tool.state === 'error') {
-    output += `❌ *${tool.name}* 错误`;
-  } else {
-    output += `⏳ *${tool.name}* 运行中...`;
-  }
-
-  // Add timing
-  if (tool.startedAt && tool.completedAt) {
-    const duration = tool.completedAt - tool.startedAt;
-    output += ` [${formatDurationMs(duration)}]`;
-  }
-
-  // Add brief result (if provided separately)
-  if (result) {
-    const summary = formatResultSummary(result, 200);
-    if (summary) {
-      output += `\n\n${summary}`;
-    }
-  }
-
-  return output;
+export function getCommandHelpText(): string {
+  return `📖 *可用命令*
+_/status_ - 查看当前状态
+_/history_ - 查看历史记录
+_/full <msgid>_ - 查看工具完整输出
+_/approve_ - 批准权限请求
+_/deny_ - 拒绝权限请求
+_/help_ - 显示此帮助信息`;
 }
 
 //
 // Helper functions
 //
 
+/**
+ * Truncate output if needed based on platform limits
+ */
 function truncateIfNeeded(text: string, options: FormatOptions): string {
   const limit = options.maxOutputLength ||
     (options.platform === 'whatsapp' ? WHATSAPP_LIMIT : FEISHU_LIMIT);
@@ -351,6 +351,9 @@ function truncateIfNeeded(text: string, options: FormatOptions): string {
   return text.substring(0, limit - 3) + '...';
 }
 
+/**
+ * Format duration for display
+ */
 function formatDuration(start: number): string {
   const now = Date.now();
   const diff = now - start;
@@ -358,45 +361,4 @@ function formatDuration(start: number): string {
   if (diff < 1000) return `${diff}ms`;
   if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
   return `${Math.floor(diff / 60000)}m`;
-}
-
-function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${Math.floor(ms / 1000)}s`;
-  return `${Math.floor(ms / 60000)}m`;
-}
-
-function formatResultSummary(result: unknown, maxLength: number): string | null {
-  if (typeof result === 'string') {
-    return result.length > maxLength ? result.substring(0, maxLength) + '...' : result;
-  }
-
-  if (result && typeof result === 'object') {
-    // Handle structured results
-    if (result.stdout) {
-      return formatResultSummary(result.stdout, maxLength);
-    }
-    if (result.error) {
-      return `错误: ${result.error}`;
-    }
-    const str = JSON.stringify(result, null, 2);
-    return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
-  }
-
-  return null;
-}
-
-/**
- * Get command help text
- */
-export function getCommandHelpText(): string {
-  return `📖 *可用命令*
-
-_/status_ - 查看当前状态
-_/switch <id>_ - 切换对话
-_/history_ - 查看历史记录
-_/full <msgid>_ - 查看工具完整输出
-_/approve_ - 批准权限请求
-_/deny_ - 拒绝权限请求
-_/help_ - 显示此帮助信息`;
 }

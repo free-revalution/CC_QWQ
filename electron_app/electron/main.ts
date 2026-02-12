@@ -4,15 +4,15 @@ import * as path from 'node:path'
 import * as url from 'node:url'
 import pkg from 'node-pty'
 import type { IPty } from 'node-pty'
-import { OperationLogger } from './operationLogger.js'
-import { ApprovalEngine } from './approvalEngine.js'
-import { OperationExecutor } from './operationExecutor.js'
-import { CheckpointManager } from './checkpointManager.js'
-import { RollbackEngine } from './rollbackEngine.js'
-import { LogExporter } from './logExporter.js'
-import { MCPProxyServer } from './mcpProxyServer.js'
-import { getBrowserManager } from './browserManager.js'
-import type { LogFilter } from '../src/types/operation.js'
+import { OperationLogger } from './operationLogger'
+import { ApprovalEngine } from './approvalEngine'
+import { OperationExecutor } from './operationExecutor'
+import { CheckpointManager } from './checkpointManager'
+import { RollbackEngine } from './rollbackEngine'
+import { LogExporter } from './logExporter'
+import { MCPProxyServer } from './mcpProxyServer'
+import { getBrowserManager } from './browserManager'
+import type { LogFilter } from '../src/types/operation'
 
 const { spawn: spawnPty } = pkg
 
@@ -31,12 +31,12 @@ type ToolCallState = 'running' | 'completed' | 'error' | 'pending'
 interface ToolCall {
   name: string
   state: ToolCallState
-  input: any
+  input: unknown
   createdAt: number
   startedAt: number | null
   completedAt: number | null
   description: string | null
-  result?: any
+  result?: unknown
   permission?: ToolPermission
 }
 
@@ -910,7 +910,7 @@ class SessionStateManager {
   private states: Map<string, SessionState> = new Map()
   private activityAccumulator: ActivityAccumulator
 
-  constructor(mobileClients: Set<WebSocketClient>) {
+  constructor(_mobileClients: Set<WebSocketClient>) {
     this.activityAccumulator = new ActivityAccumulator(
       (updates) => this.broadcastActivityUpdates(updates),
       2000
@@ -1047,6 +1047,7 @@ const WS_READY_STATE_OPEN = 1
 
 // Debounced broadcast mechanism
 let broadcastScheduled = false
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- 在scheduleBroadcastConversationList函数中使用
 let broadcastTimeout: NodeJS.Timeout | null = null
 
 const scheduleBroadcastConversationList = () => {
@@ -1118,8 +1119,9 @@ async function startWebSocketServer() {
 
     // 使用 createRequire 加载 CommonJS 版本的 ws
     const { createRequire } = await import('module')
-    const require = createRequire(import.meta.url)
-    const WebSocketServer = require('ws').Server
+    const _require = createRequire(import.meta.url)
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- 动态加载CommonJS模块
+    const WebSocketServer = _require('ws').Server
     wss = new WebSocketServer({ port: PORT })
 
     // 处理连接事件
@@ -2026,7 +2028,6 @@ ipcMain.handle('get-conversation-list', async () => {
 
 // 处理文件内容
 function handleFileContent(filePath: string): string {
-  const fs = require('fs')
   const ext = filePath.split('.').pop()?.toLowerCase()
   const fileName = filePath.split('/').pop() || filePath.split('\\').pop() || 'unknown'
 

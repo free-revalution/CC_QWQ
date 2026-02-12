@@ -348,3 +348,120 @@ export interface SSEConnectionInfo {
   endpoint: string
   healthEndpoint: string
 }
+
+// ==================== Bot 集成相关类型 ====================
+
+/**
+ * Claude 原始消息类型
+ */
+export interface ClaudeRawMessage {
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp?: number
+  requestId?: string
+  status?: 'pending' | 'approved' | 'denied' | 'error'
+  error?: string
+}
+
+/**
+ * Claude 请求类型
+ */
+export interface ClaudeRequest {
+  type: 'text' | 'image' | 'tool_use'
+  content: string
+  timestamp: number
+  requestId: string
+  context?: {
+    maxTokens?: number
+    currentCount?: number
+    conversationId?: string
+  }
+}
+
+/**
+ * WebSocket 连接状态
+ */
+export interface ConnectionState {
+  status: 'disconnected' | 'connecting' | 'connected' | 'error'
+  lastError?: string
+  serverUrl?: string
+  tokenBalance?: number
+}
+
+/**
+ * Bot 状态
+ */
+export interface BotStatus {
+  status: 'idle' | 'connecting' | 'active' | 'paused' | 'error'
+  currentTool?: string
+  activeConversationId?: string
+  mode: 'talk' | 'develop'
+  lastActivity?: number
+}
+
+/**
+ * 对话消息
+ */
+export interface ConversationMessage {
+  id: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  timestamp: number
+  status?: 'pending' | 'approved' | 'denied' | 'error'
+  toolCalls?: ToolCallRequest[]
+}
+
+/**
+ * 对话状态
+ */
+export interface ConversationState {
+  id: string
+  messages: ConversationMessage[]
+  mode: 'talk' | 'develop'
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * Bot 应用状态
+ */
+export interface BotAppState {
+  connection: ConnectionState
+  currentConversationId: string | null
+  bot: BotStatus
+  conversations: Map<string, ConversationState>
+}
+
+/**
+ * Bot 动作类型
+ */
+export type BotAction =
+  | { type: 'SET_CONNECTION_STATUS'; payload: ConnectionState }
+  | { type: 'SET_CURRENT_CONVERSATION'; payload: string | null }
+  | { type: 'SET_BOT_STATUS'; payload: BotStatus }
+  | { type: 'ADD_MESSAGE'; payload: { conversationId: string; message: ConversationMessage } }
+  | { type: 'UPDATE_MESSAGE'; payload: { conversationId: string; messageId: string; updates: Partial<ConversationMessage> } }
+  | { type: 'CREATE_CONVERSATION'; payload: ConversationState }
+  | { type: 'DELETE_CONVERSATION'; payload: string }
+
+/**
+ * WebSocket 消息类型
+ */
+export type WebSocketMessage =
+  | { type: 'connection_status'; data: ConnectionState }
+  | { type: 'message'; data: ClaudeRawMessage }
+  | { type: 'tool_call'; data: ToolCallRequest }
+  | { type: 'error'; data: { message: string; code?: string } }
+  | { type: 'heartbeat' }
+
+/**
+ * 工具执行结果
+ */
+export interface ToolExecutionResult {
+  success: boolean
+  result?: unknown
+  error?: string
+  duration?: number
+  toolName: string
+  timestamp: number
+}

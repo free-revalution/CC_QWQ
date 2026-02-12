@@ -5,7 +5,32 @@
  * that generates appropriate display text for chat platforms.
  */
 
-import type { ToolCallMessage } from '../types/messages';
+import type { ToolCallMessage, BashToolInput, BashToolResult, EditToolInput, WriteToolInput, TodoWriteToolInput } from '../types/messages';
+
+// Type assertion for Bash tool input
+function asBashInput(input: Record<string, unknown> | undefined): BashToolInput | undefined {
+  return input as BashToolInput | undefined;
+}
+
+// Type assertion for Edit tool input
+function asEditInput(input: Record<string, unknown> | undefined): EditToolInput | undefined {
+  return input as EditToolInput | undefined;
+}
+
+// Type assertion for Write tool input
+function asWriteInput(input: Record<string, unknown> | undefined): WriteToolInput | undefined {
+  return input as WriteToolInput | undefined;
+}
+
+// Type assertion for TodoWrite tool input
+function asTodoWriteInput(input: Record<string, unknown> | undefined): TodoWriteToolInput | undefined {
+  return input as TodoWriteToolInput | undefined;
+}
+
+// Type assertion for Bash tool result
+function asBashResult(result: unknown): BashToolResult | undefined {
+  return result as BashToolResult | undefined;
+}
 
 export interface ToolViewFormatter {
   // Generate summary for chat display (brief)
@@ -30,7 +55,8 @@ export interface ToolViewFormatter {
 // Bash tool formatter
 const bashFormatter: ToolViewFormatter = {
   formatSummary: (tool) => {
-    const cmd = tool.input?.command || tool.input?.cmd || '';
+    const input = asBashInput(tool.input);
+    const cmd = input?.command ?? input?.cmd ?? '';
     const shortCmd = cmd.length > 40 ? cmd.substring(0, 40) + '...' : cmd;
     return `🔧 Bash: ${shortCmd}`;
   },
@@ -41,38 +67,43 @@ const bashFormatter: ToolViewFormatter = {
         return `⏳ Bash 运行中... [${formatDuration(tool.startedAt)}]`;
       case 'completed':
         return `✅ Bash 完成 ${tool.completedAt ? `[${formatDuration(tool.createdAt, tool.completedAt)}]` : ''}`;
-      case 'error':
-        return `❌ Bash 错误: ${tool.result?.error || '执行失败'}`;
+      case 'error': {
+        const result = asBashResult(tool.result);
+        return `❌ Bash 错误: ${result?.error ?? '执行失败'}`;
+      }
       default:
-        return `🔧 Bash: ${tool.input?.command || ''}`;
+        return `🔧 Bash: ${asBashInput(tool.input)?.command ?? ''}`;
     }
   },
 
   formatDetail: (tool) => {
-    const cmd = tool.input?.command || tool.input?.cmd || '';
+    const input = asBashInput(tool.input);
+    const cmd = input?.command ?? input?.cmd ?? '';
     let output = `🔧 Bash 命令执行\n`;
     output += `命令: ${cmd}\n\n`;
 
     if (tool.state === 'running') {
       output += `状态: 运行中...\n`;
-      output += `开始时间: ${new Date(tool.startedAt || tool.createdAt).toLocaleString()}\n`;
+      output += `开始时间: ${new Date(tool.startedAt ?? tool.createdAt).toLocaleString()}\n`;
     } else if (tool.state === 'completed') {
       output += `状态: ✅ 完成\n`;
       if (tool.completedAt) {
         output += `完成时间: ${new Date(tool.completedAt).toLocaleString()}\n`;
       }
-      if (tool.result?.exit_code !== undefined) {
-        output += `退出码: ${tool.result.exit_code}\n`;
+      const result = asBashResult(tool.result);
+      if (result?.exit_code !== undefined) {
+        output += `退出码: ${result.exit_code}\n`;
       }
-      if (tool.result?.stdout) {
-        output += `\n标准输出:\n${tool.result.stdout}\n`;
+      if (result?.stdout) {
+        output += `\n标准输出:\n${result.stdout}\n`;
       }
-      if (tool.result?.stderr) {
-        output += `\n标准错误:\n${tool.result.stderr}\n`;
+      if (result?.stderr) {
+        output += `\n标准错误:\n${result.stderr}\n`;
       }
     } else if (tool.state === 'error') {
       output += `状态: ❌ 错误\n`;
-      output += `错误: ${tool.result?.error || '未知错误'}\n`;
+      const result = asBashResult(tool.result);
+      output += `错误: ${result?.error ?? '未知错误'}\n`;
     }
 
     return output;
@@ -87,14 +118,16 @@ const bashFormatter: ToolViewFormatter = {
 // Edit/Str Replace tool formatter
 const editFormatter: ToolViewFormatter = {
   formatSummary: (tool) => {
-    const path = tool.input?.path || tool.input?.file_path || '';
-    const op = tool.input?.command || 'edit';
+    const input = asEditInput(tool.input);
+    const path = input?.path ?? input?.file_path ?? '';
+    const op = input?.command ?? 'edit';
     const shortPath = path.length > 30 ? '...' + path.substring(path.length - 30) : path;
     return `📝 ${op}: ${shortPath}`;
   },
 
   formatStateChange: (tool) => {
-    const path = tool.input?.path || '';
+    const input = asEditInput(tool.input);
+    const path = input?.path ?? '';
     switch (tool.state) {
       case 'running':
         return `⏳ 编辑 ${path}...`;
@@ -103,19 +136,20 @@ const editFormatter: ToolViewFormatter = {
       case 'error':
         return `❌ 编辑失败: ${path}`;
       default:
-        return `📝 ${tool.input?.command || ''}: ${path}`;
+        return `📝 ${input?.command ?? ''}: ${path}`;
     }
   },
 
   formatDetail: (tool) => {
+    const input = asEditInput(tool.input);
     let output = `📝 文件编辑操作\n`;
-    output += `操作: ${tool.input?.command || ''}\n`;
-    output += `文件: ${tool.input?.path || ''}\n\n`;
+    output += `操作: ${input?.command ?? ''}\n`;
+    output += `文件: ${input?.path ?? ''}\n\n`;
 
-    if (tool.input?.old_str && tool.input?.new_str) {
+    if (input?.old_str && input?.new_str) {
       output += `替换内容:\n`;
-      output += `- 移除: ${tool.input.old_str.substring(0, 100)}...\n`;
-      output += `+ 添加: ${tool.input.new_str.substring(0, 100)}...\n`;
+      output += `- 移除: ${input.old_str.substring(0, 100)}...\n`;
+      output += `+ 添加: ${input.new_str.substring(0, 100)}...\n`;
     }
 
     if (tool.state === 'completed' && tool.result) {
@@ -129,7 +163,8 @@ const editFormatter: ToolViewFormatter = {
 // Write tool formatter
 const writeFormatter: ToolViewFormatter = {
   formatSummary: (tool) => {
-    const path = tool.input?.path || '';
+    const input = asWriteInput(tool.input);
+    const path = input?.path ?? '';
     const shortPath = path.length > 30 ? '...' + path.substring(path.length - 30) : path;
     return `📄 写入: ${shortPath}`;
   },
@@ -142,17 +177,20 @@ const writeFormatter: ToolViewFormatter = {
         return `✅ 文件已写入`;
       case 'error':
         return `❌ 写入失败`;
-      default:
-        return `📄 写入: ${tool.input?.path || ''}`;
+      default: {
+        const input = asWriteInput(tool.input);
+        return `📄 写入: ${input?.path ?? ''}`;
+      }
     }
   },
 
   formatDetail: (tool) => {
+    const input = asWriteInput(tool.input);
     let output = `📄 文件写入\n`;
-    output += `文件: ${tool.input?.path || ''}\n`;
+    output += `文件: ${input?.path ?? ''}\n`;
 
-    if (tool.input?.content) {
-      const content = tool.input.content;
+    if (input?.content) {
+      const content = input.content;
       const preview = content.length > 200 ? content.substring(0, 200) + '...' : content;
       output += `\n内容预览:\n${preview}\n`;
     }
@@ -164,7 +202,8 @@ const writeFormatter: ToolViewFormatter = {
 // TodoWrite tool formatter
 const todoFormatter: ToolViewFormatter = {
   formatSummary: (tool) => {
-    const todos = tool.input?.todos || [];
+    const input = asTodoWriteInput(tool.input);
+    const todos = input?.todos ?? [];
     return `📋 任务列表: ${todos.length} 项`;
   },
 
@@ -176,10 +215,10 @@ const todoFormatter: ToolViewFormatter = {
   },
 
   formatDetail: (tool) => {
-    let output = `📋 TodoWrite\n`;
-    const todos = tool.input?.todos || [];
+    const input = asTodoWriteInput(tool.input);
+    const todos = input?.todos ?? [];
 
-    output += `任务数: ${todos.length}\n\n`;
+    let output = `任务数: ${todos.length}\n\n`;
 
     todos.forEach((todo: { status: string; priority: string; content: string }, idx: number) => {
       const status = todo.status === 'completed' ? '✅' :
@@ -193,9 +232,11 @@ const todoFormatter: ToolViewFormatter = {
   },
 
   extractKeyInfo: (tool) => {
+    const input = asTodoWriteInput(tool.input);
+    const todos = input?.todos ?? [];
     return {
-      todoCount: tool.input?.todos?.length || 0,
-      completed: tool.input?.todos?.filter((t: { status: string }) => t.status === 'completed').length || 0
+      todoCount: todos.length,
+      completed: todos.filter((t: { status: string; priority: string; content: string }) => t.status === 'completed').length
     };
   }
 };
@@ -215,7 +256,7 @@ const taskFormatter: ToolViewFormatter = {
 
   formatDetail: (tool) => {
     let output = `🎯 Task 子任务\n`;
-    output += `目标: ${tool.input?.goal || tool.description || ''}\n\n`;
+    output += `目标: ${(tool.input?.goal ?? tool.description ?? '') as string}\n\n`;
     output += `⚠️ 复杂任务，建议在桌面端查看完整对话\n`;
     return output;
   },
@@ -230,13 +271,13 @@ const taskFormatter: ToolViewFormatter = {
 const mcpFormatter: ToolViewFormatter = {
   formatSummary: (tool) => {
     const parts = tool.name.split('/');
-    const server = parts[0] || 'mcp';
-    const toolName = parts[1] || tool.name;
+    const server = parts[0] ?? 'mcp';
+    const toolName = parts[1] ?? tool.name;
     return `🔌 MCP: ${server}.${toolName}`;
   },
 
   formatStateChange: (tool) => {
-    return `${formatSummary(tool)}: ${tool.state}`;
+    return `${formatToolForChat(tool)}: ${tool.state}`;
   },
 
   formatDetail: (tool) => {
@@ -342,7 +383,7 @@ export function formatToolDetail(tool: ToolCallMessage['tool']): string {
  */
 export function needsDesktopHandling(tool: ToolCallMessage['tool']): boolean {
   const formatter = getToolFormatter(tool.name);
-  return formatter.needsDesktopHandling?.(tool) || false;
+  return formatter.needsDesktopHandling?.(tool) ?? false;
 }
 
 /**
@@ -350,7 +391,7 @@ export function needsDesktopHandling(tool: ToolCallMessage['tool']): boolean {
  */
 export function shouldTruncateOutput(tool: ToolCallMessage['tool'], outputLength: number): boolean {
   const formatter = getToolFormatter(tool.name);
-  return formatter.shouldTruncate?.(tool, outputLength) || false;
+  return formatter.shouldTruncate?.(tool, outputLength) ?? false;
 }
 
 /**
@@ -358,7 +399,7 @@ export function shouldTruncateOutput(tool: ToolCallMessage['tool'], outputLength
  */
 export function extractToolKeyInfo(tool: ToolCallMessage['tool']): Record<string, unknown> | null {
   const formatter = getToolFormatter(tool.name);
-  return formatter.extractKeyInfo?.(tool) || null;
+  return formatter.extractKeyInfo?.(tool) ?? null;
 }
 
 //
@@ -374,8 +415,4 @@ function formatDuration(start: number | undefined, end?: number): string {
   if (diff < 1000) return `${diff}ms`;
   if (diff < 60000) return `${Math.floor(diff / 1000)}s`;
   return `${Math.floor(diff / 60000)}m`;
-}
-
-function formatSummary(tool: ToolCallMessage['tool']): string {
-  return getToolFormatter(tool.name).formatSummary(tool);
 }

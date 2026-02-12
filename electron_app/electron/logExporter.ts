@@ -4,7 +4,7 @@
  * 支持导出为 JSON、CSV、Markdown 三种格式
  */
 
-import type { LogEntry, ExportOptions, ExportFormat } from '../src/types/operation.js'
+import type { LogEntry, ExportOptions } from '../src/types/operation.js'
 
 export class LogExporter {
   /**
@@ -12,7 +12,7 @@ export class LogExporter {
    */
   export(logs: LogEntry[], options: ExportOptions): string {
     // 过滤日志
-    let filteredLogs = this.filterLogs(logs, options)
+    const filteredLogs = this.filterLogs(logs, options)
 
     switch (options.format) {
       case 'json':

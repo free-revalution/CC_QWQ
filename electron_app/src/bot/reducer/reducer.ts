@@ -28,6 +28,54 @@ export interface ClaudeRawMessage {
   localId?: string;
 }
 
+// Content block types
+interface TextBlock {
+  type: 'text';
+  text: string;
+}
+
+interface ToolCallBlock {
+  type: 'tool_call';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  text?: string;
+}
+
+interface ToolResultBlock {
+  type: 'tool_result';
+  tool_use_id: string;
+  is_error?: boolean;
+  content: unknown;
+}
+
+interface EventBlock {
+  type: 'event';
+  event_type?: 'error' | 'ready' | 'mode_switch' | 'context_reset' | 'compaction';
+  message?: string;
+  [key: string]: unknown;
+}
+
+// Type guard for text block
+function isTextBlock(block: unknown): block is TextBlock {
+  return typeof block === 'object' && block !== null && 'type' in block && block.type === 'text';
+}
+
+// Type guard for tool call block
+function isToolCallBlock(block: unknown): block is ToolCallBlock {
+  return typeof block === 'object' && block !== null && 'type' in block && block.type === 'tool_call';
+}
+
+// Type guard for tool result block
+function isToolResultBlock(block: unknown): block is ToolResultBlock {
+  return typeof block === 'object' && block !== null && 'type' in block && block.type === 'tool_result';
+}
+
+// Type guard for event block
+function isEventBlock(block: unknown): block is EventBlock {
+  return typeof block === 'object' && block !== null && 'type' in block && block.type === 'event';
+}
+
 /**
  * Main reducer function - processes raw messages through all phases
  */
@@ -45,8 +93,9 @@ export function messageReducer(
   // Phase 0: Handle permissions from agent state
   //
 
-  if (agentState?.requests) {
-    for (const [permId, request] of Object.entries(agentState.requests)) {
+  if (agentState && typeof agentState === 'object' && 'requests' in agentState) {
+    const requests = agentState.requests as Record<string, unknown>;
+    for (const [permId, request] of Object.entries(requests)) {
       // Skip if already processed
       if (state.toolIdToMessageId.has(permId)) {
         continue;
@@ -109,9 +158,9 @@ export function messageReducer(
     // Process user message
     if (msg.role === 'user') {
       // Extract text from content array or use raw content
-      const content = Array.isArray(msg.content)
-        ? msg.content.find((b: unknown) => typeof b === 'object' && b !== null && 'type' in b && b.type === 'text')?.text || ''
-        : String(msg.content);
+      const contentArray = Array.isArray(msg.content) ? msg.content : [];
+      const textBlock = contentArray.find(isTextBlock);
+      const content = textBlock?.text ?? String(msg.content);
 
       const userMsg: UserTextMessage = {
         id: allocateId(),
@@ -130,8 +179,9 @@ export function messageReducer(
 
     // Process assistant text content
     else if (msg.role === 'assistant') {
-      for (const block of msg.content) {
-        if (block.type === 'text') {
+      const contentArray = Array.isArray(msg.content) ? msg.content : [];
+      for (const block of contentArray) {
+        if (isTextBlock(block)) {
           const agentMsg: AgentTextMessage = {
             id: allocateId(),
             kind: 'agent-text',
@@ -156,8 +206,9 @@ export function messageReducer(
 
   for (const msg of rawMessages) {
     if (msg.role === 'assistant') {
-      for (const block of msg.content) {
-        if (block.type === 'tool_call') {
+      const contentArray = Array.isArray(msg.content) ? msg.content : [];
+      for (const block of contentArray) {
+        if (isToolCallBlock(block)) {
           const existingMsgId = state.toolIdToMessageId.get(block.id);
 
           if (existingMsgId) {
@@ -226,8 +277,9 @@ export function messageReducer(
 
   for (const msg of rawMessages) {
     if (msg.role === 'assistant') {
-      for (const block of msg.content) {
-        if (block.type === 'tool_result') {
+      const contentArray = Array.isArray(msg.content) ? msg.content : [];
+      for (const block of contentArray) {
+        if (isToolResultBlock(block)) {
           const msgId = state.toolIdToMessageId.get(block.tool_use_id);
           if (!msgId) continue;
 
@@ -263,9 +315,10 @@ export function messageReducer(
   for (const msg of rawMessages) {
     if (msg.role === 'system' || msg.type === 'event') {
       // Handle event messages
-      const contentObj = Array.isArray(msg.content) && msg.content[0]
-        ? msg.content[0]
-        : (typeof msg.content === 'object' ? msg.content : {});
+      const contentArray = Array.isArray(msg.content) ? msg.content : [];
+      const contentObj = (contentArray[0] ?? {}) as Record<string, unknown>;
+
+      const eventBlock = isEventBlock(contentObj) ? contentObj : null;
 
       const eventMsg: EventMessage = {
         id: allocateId(),
@@ -274,9 +327,9 @@ export function messageReducer(
         platform: 'whatsapp',
         conversationId: '',
         event: {
-          type: typeof contentObj === 'object' && contentObj !== null && 'type' in contentObj ? String(contentObj.type) : 'ready',
+          type: eventBlock?.event_type ?? 'ready',
           data: contentObj,
-          message: typeof contentObj === 'object' && contentObj !== null && 'message' in contentObj ? String(contentObj.message) : undefined
+          message: eventBlock?.message
         }
       };
 
@@ -309,11 +362,13 @@ function allocateId(): string {
 function generateToolSummary(tool: { name: string; input?: Record<string, unknown> }): string {
   // Generate concise summary for chat display
   if (tool.name === 'bash:execute') {
-    const cmd = tool.input?.command || tool.input?.cmd || '';
+    const input = tool.input as Record<string, unknown> | undefined;
+    const cmd = (input?.command as string | undefined) ?? (input?.cmd as string | undefined) ?? '';
     return cmd.length > 30 ? cmd.substring(0, 30) + '...' : cmd;
   }
   if (tool.name === 'str_replace_editor') {
-    return tool.input?.path || 'file edit';
+    const input = tool.input as Record<string, unknown> | undefined;
+    return (input?.path as string | undefined) ?? 'file edit';
   }
   return tool.name;
 }

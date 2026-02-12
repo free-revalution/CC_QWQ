@@ -156,13 +156,17 @@ export class BrowserManager {
       if (this.context) {
         try {
           await this.context.close()
-        } catch {}
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
         this.context = null
       }
       if (this.browser) {
         try {
           await this.browser.close()
-        } catch {}
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
         this.browser = null
       }
 

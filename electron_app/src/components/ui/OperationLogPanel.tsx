@@ -29,6 +29,13 @@ const getStatusDisplay = (status: string): { text: string; className: string } =
   return statusMap[status] || { text: status, className: '' }
 }
 
+// Helper component to render log details with proper typing
+const LogDetailsRenderer = ({ details }: { details: unknown }): React.ReactElement | null => {
+  if (!details) return null;
+  const detailsStr = JSON.stringify(details, null, 2);
+  return <pre className="log-details">{detailsStr}</pre>;
+};
+
 export const OperationLogPanel: React.FC = () => {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState<boolean>(false)
@@ -225,9 +232,7 @@ export const OperationLogPanel: React.FC = () => {
               </div>
               <div className="log-title">{log.title}</div>
               <div className="log-message">{log.message}</div>
-              {log.details && (
-                <pre className="log-details">{JSON.stringify(log.details, null, 2)}</pre>
-              )}
+              <LogDetailsRenderer details={log.details} key="details" />
               {log.duration && (
                 <div className="log-duration">Duration: {log.duration}ms</div>
               )}

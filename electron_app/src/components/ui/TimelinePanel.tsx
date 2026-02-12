@@ -90,6 +90,16 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ className = '' }) 
     return parts.join(', ')
   }
 
+  // Helper component to render details with proper typing
+  const DetailsRenderer: React.FC<{
+    details: unknown;
+    summarizeParams: (details: unknown) => string;
+  }> = ({ details, summarizeParams }) => {
+    if (!details) return null;
+    const summary = summarizeParams(details);
+    return <div className="timeline-item-details">{summary}</div>;
+  };
+
   return (
     <div className={`timeline-panel ${isCollapsed ? 'collapsed' : ''} ${className}`}>
       {/* 头部 */}
@@ -115,7 +125,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ className = '' }) 
           <div className="timeline-filters">
             <select
               value={filter.status?.[0] || ''}
-              onChange={(e) => setFilter({ ...filter, status: e.target.value ? [e.target.value] : undefined })}
+              onChange={(e) => setFilter({ ...filter, status: e.target.value ? [e.target.value as OperationStatus] : undefined })}
             >
               <option value="">全部状态</option>
               <option value="success">成功</option>
@@ -137,11 +147,7 @@ export const TimelinePanel: React.FC<TimelinePanelProps> = ({ className = '' }) 
                 <div className="timeline-item-content">
                   <div className="timeline-item-tool">{entry.tool || 'System'}</div>
                   <div className="timeline-item-message">{entry.title}</div>
-                  {entry.details && (
-                    <div className="timeline-item-details">
-                      {String(summarizeParams(entry.details))}
-                    </div>
-                  )}
+                  <DetailsRenderer details={entry.details} summarizeParams={summarizeParams} key="details" />
                   {entry.duration && (
                     <div className="timeline-item-duration">{entry.duration}ms</div>
                   )}
