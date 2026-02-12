@@ -12,14 +12,24 @@ import type { ToolPermissionConfig, FileSnapshot } from '../src/types/operation.
 import type { CheckpointManager } from './checkpointManager.js'
 
 /**
+ * Escape special regex characters in a string
+ */
+function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
  * Convert glob pattern to RegExp
+ * Safely escapes user input before converting glob syntax
  */
 function globToRegex(pattern: string): RegExp {
-  const regex = pattern
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-  return new RegExp(regex)
+  // First escape all regex special chars, then convert glob syntax
+  const escaped = escapeRegExp(pattern)
+  const regex = escaped
+    .replace(/\\\*\\\*/g, '.*')  // ** -> .*
+    .replace(/\\\*/g, '[^/]*')    // *  -> [^/]*
+    .replace(/\\\?/g, '[^/]')     // ?  -> [^/]
+  return new RegExp(`^${regex}$`)
 }
 
 function matchesPattern(value: string, pattern: string): boolean {
@@ -109,13 +119,24 @@ export class OperationExecutor {
           return
         }
 
-        // 简单的命令注入检查
-        const dangerousChars = [';', '|', '&', '`', '$', '(', ')', '\n', '\r']
-        const hasDangerousChar = dangerousChars.some(char => command.includes(char))
+        // 增强的命令注入检查
+        // 危险字符和模式：shell 控制操作符、命令替换、重定向等
+        const dangerousPatterns = [
+          /[;&|`$]/,           // Shell 控制字符
+          /\$\(/,              // 命令替换 $(...)
+          /\${/,               // 变量展开 ${...}
+          /\(\)/,              // 子 shell
+          /[<>]/,              // 重定向
+          /\\/,                // 转义字符
+          /\n|\r/,             // 换行符
+          /\.\./,              // 路径遍历
+        ]
 
-        if (hasDangerousChar) {
-          resolve({ success: false, error: 'Command contains dangerous characters' })
-          return
+        for (const pattern of dangerousPatterns) {
+          if (pattern.test(command)) {
+            resolve({ success: false, error: `Command contains dangerous pattern: ${pattern.source}` })
+            return
+          }
         }
 
         // 解析命令
@@ -123,14 +144,25 @@ export class OperationExecutor {
         const cmd = parts[0]
         const args = parts.slice(1)
 
-        // 执行命令
+        // 可选：命令白名单检查（如果有配置）
+        const allowedCommands = permission.sandboxConstraints?.allowedCommands as string[] | undefined
+        if (allowedCommands && allowedCommands.length > 0) {
+          if (!allowedCommands.includes(cmd)) {
+            resolve({ success: false, error: `Command not allowed: ${cmd}` })
+            return
+          }
+        }
+
+        // 执行命令（不使用 shell，更安全）
         const proc = spawn(cmd, args, {
           cwd: process.cwd(),
-          env: { ...process.env, PATH: process.env.PATH }
+          env: { ...process.env, PATH: process.env.PATH },
+          shell: false  // 不通过 shell 执行，避免注入
         })
 
         let stdout = ''
         let stderr = ''
+        let resolved = false
 
         proc.stdout?.on('data', (data) => {
           stdout += data.toString()
@@ -142,36 +174,45 @@ export class OperationExecutor {
 
         // 超时控制（60秒）
         const timeout = setTimeout(() => {
-          proc.kill()
-          resolve({
-            success: false,
-            error: 'Command timed out after 60 seconds'
-          })
+          if (!resolved) {
+            resolved = true
+            proc.kill()
+            resolve({
+              success: false,
+              error: 'Command timed out after 60 seconds'
+            })
+          }
         }, 60000)
 
         proc.on('close', (code) => {
-          clearTimeout(timeout)
-          resolve({
-            success: code === 0,
-            data: {
-              exitCode: code,
-              stdout: stdout.trim(),
-              stderr: stderr.trim()
-            }
-          })
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            resolve({
+              success: code === 0,
+              data: {
+                exitCode: code,
+                stdout: stdout.trim(),
+                stderr: stderr.trim()
+              }
+            })
+          }
         })
 
         proc.on('error', (error) => {
-          clearTimeout(timeout)
-          resolve({
-            success: false,
-            error: `Failed to execute command: ${error.message}`
-          })
+          if (!resolved) {
+            resolved = true
+            clearTimeout(timeout)
+            resolve({
+              success: false,
+              error: `Failed to execute command: ${error.message}`
+            })
+          }
         })
       } catch (error) {
         resolve({
           success: false,
-          error: `Command execution error: ${(error as Error).message}`
+          error: `Command execution error: ${error instanceof Error ? error.message : String(error)}`
         })
       }
     })
@@ -284,13 +325,40 @@ export class OperationExecutor {
 
   /**
    * 验证路径是否在沙盒允许范围内
+   * 使用 path.resolve 防止路径遍历攻击
    */
   private validatePath(filePath: string, allowedPaths: string[]): boolean {
-    // 规范化路径
-    const normalizedPath = path.normalize(filePath)
+    try {
+      // 解析为绝对路径，防止 ../ 等路径遍历
+      const resolvedPath = path.resolve(filePath)
 
-    // 检查是否匹配任何允许的模式
-    return matchesAnyPattern(normalizedPath, allowedPaths)
+      // 检查是否匹配任何允许的模式
+      // 首先检查是否在允许的目录内
+      for (const allowedPath of allowedPaths) {
+        // 对于 glob 模式，使用模式匹配
+        if (allowedPath.includes('*') || allowedPath.includes('?')) {
+          if (matchesAnyPattern(resolvedPath, allowedPaths)) {
+            return true
+          }
+        } else {
+          // 对于具体路径，检查是否以允许路径开头
+          const resolvedAllowed = path.resolve(allowedPath)
+          // 确保路径以分隔符结尾，防止 /allowed 匹配 /allowed-other
+          const allowedWithSep = resolvedAllowed.endsWith(path.sep)
+            ? resolvedAllowed
+            : resolvedAllowed + path.sep
+
+          // 检查是否是允许目录本身或其子路径
+          if (resolvedPath === resolvedAllowed || resolvedPath.startsWith(allowedWithSep)) {
+            return true
+          }
+        }
+      }
+
+      return false
+    } catch {
+      return false
+    }
   }
 
   /**

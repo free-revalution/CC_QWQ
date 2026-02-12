@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle, FileText, Shield } from 'lucide-react'
+import { Plus, Loader2, Settings, Sparkles, Menu, X, ChevronLeft, Pin, GitBranch, Search, ChevronDown, Home, Paperclip, XCircle, FileText, Shield, Clock, ArrowLeft } from 'lucide-react'
 import { List } from 'react-window'
 import Card from '../components/ui/Card'
 import MessageContent from '../components/ui/MessageContent'
@@ -10,8 +10,8 @@ import GitStatusPanel from '../components/ui/GitStatusPanel'
 import FileSearchPanel from '../components/ui/FileSearchPanel'
 import { OperationLogPanel } from '../components/ui/OperationLogPanel'
 import ActivityIndicator, { ActivityDot } from '../components/ui/ActivityIndicator'
-import TimelinePanel from '../components/ui/TimelinePanel'
 import { ApprovalDialog } from '../components/ui/ApprovalDialog'
+import { PermissionRequestDialog } from '../components/ui/PermissionRequestDialog'
 import { ApprovalPreferences } from '../components/ui/ApprovalPreferences'
 import { ipc } from '../lib/ipc'
 import {
@@ -38,6 +38,110 @@ const BREAKPOINTS = {
 interface ConversationPageProps {
   projectPath: string | null
   onOpenSettings: () => void
+}
+
+// 时间线内容组件 - 用于左侧边栏内嵌显示
+function TimelineContent() {
+  const [entries, setEntries] = useState<Array<{
+    id: string
+    timestamp: number
+    tool: string
+    title: string
+    status: string
+    details?: unknown
+    duration?: number
+  }>>([])
+  const [filter, setFilter] = useState<{
+    status?: string[]
+    tool?: string[]
+  }>({})
+
+  // 加载历史日志
+  useEffect(() => {
+    const loadLogs = async () => {
+      try {
+        const logs = await ipc.getLogs(filter)
+        setEntries(logs)
+      } catch (error) {
+        console.error('Failed to load timeline entries:', error)
+      }
+    }
+    loadLogs()
+  }, [filter])
+
+  // 订阅实时日志
+  useEffect(() => {
+    const cleanupId = ipc.onLogEntry((log) => {
+      setEntries(prev => [...prev, log].slice(-100)) // 保留最近100条
+    })
+    return () => ipc.removeListener(cleanupId)
+  }, [])
+
+  // 获取状态图标样式
+  const getStatusStyle = (status: string) => {
+    const styleMap: Record<string, string> = {
+      pending: 'text-yellow-400',
+      approved: 'text-blue-400',
+      denied: 'text-red-400',
+      success: 'text-green-400',
+      error: 'text-red-400',
+      completed: 'text-green-400',
+      awaiting_approval: 'text-orange-400',
+      running: 'text-blue-400 animate-pulse'
+    }
+    return styleMap[status] || 'text-gray-400'
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-2">
+      {/* 过滤器 */}
+      <select
+        value={filter.status?.[0] || ''}
+        onChange={(e) => setFilter({ ...filter, status: e.target.value ? [e.target.value] : undefined })}
+        className="w-full px-2 py-1.5 text-xs glass-card border-0 focus:outline-none focus:ring-1 focus:ring-blue-500/20 mb-2"
+      >
+        <option value="">全部状态</option>
+        <option value="success">成功</option>
+        <option value="error">失败</option>
+        <option value="pending">等待中</option>
+      </select>
+
+      {/* 时间线列表 */}
+      {entries.length === 0 ? (
+        <div className="text-xs text-secondary/60 text-center py-4">暂无操作记录</div>
+      ) : (
+        entries.map((entry) => (
+          <div
+            key={entry.id}
+            className={`p-2 rounded-lg border-l-2 transition-all hover:bg-white/5 ${
+              entry.status === 'success' ? 'border-l-green-400' :
+              entry.status === 'error' ? 'border-l-red-400' :
+              entry.status === 'pending' ? 'border-l-yellow-400' :
+              'border-l-gray-400'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <div className={`w-1.5 h-1.5 rounded-full ${getStatusStyle(entry.status)}`} />
+              <span className="text-xs font-medium text-primary truncate flex-1">
+                {entry.tool || 'System'}
+              </span>
+              <span className="text-[10px] text-secondary/60">
+                {new Date(entry.timestamp).toLocaleTimeString()}
+              </span>
+            </div>
+            <div className="text-[11px] text-secondary/80 mt-1 truncate pl-3.5">
+              {entry.title}
+            </div>
+            {entry.duration && (
+              <div className="text-[10px] text-blue-400 mt-0.5 pl-3.5">
+                {entry.duration}ms
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  )
 }
 
 export default function ConversationPage({
@@ -78,7 +182,16 @@ export default function ConversationPage({
   // 信任文件夹弹窗状态
   const [trustRequest, setTrustRequest] = useState<{ conversationId: string; projectPath: string; message: string } | null>(null)
   // 权限弹窗状态
-  const [permissionRequest, setPermissionRequest] = useState<{ conversationId: string; projectPath: string; toolName: string; details: string } | null>(null)
+  const [permissionRequest, setPermissionRequest] = useState<{
+    conversationId: string
+    projectPath: string
+    toolName: string
+    details: string
+    promptType?: 'edit' | 'write' | 'generic' | 'tool-permission'
+    options?: string[]
+    question?: string
+    filterMode: 'develop' | 'talk'
+  } | null>(null)
   // 审批弹窗状态（Controlled AI Operations）
   const [approvalRequest, setApprovalRequest] = useState<{ requestId: string; tool: string; params: Record<string, unknown>; riskLevel: 'low' | 'medium' | 'high'; reason?: string } | null>(null)
   // 审批偏好设置弹窗状态
@@ -112,6 +225,7 @@ export default function ConversationPage({
   const [windowSize, setWindowSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [sidebarVisible, setSidebarVisible] = useState(true) // 移动端完全隐藏侧边栏
+  const [sidebarMode, setSidebarMode] = useState<'conversations' | 'timeline'>('conversations') // 侧边栏模式
 
   // Git 状态面板
   const [gitPanelVisible, setGitPanelVisible] = useState(false)
@@ -212,7 +326,7 @@ export default function ConversationPage({
       ipc.updateChatHistory(currentConversation.messages).catch(console.error)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentConversationId, currentConversation?.messages.length]) // 当切换对话或消息数量变化时触发
+  }, [currentConversationId]) // 当切换对话时触发
 
   // 保存当前对话 ID
   useEffect(() => {
@@ -307,7 +421,12 @@ export default function ConversationPage({
   // 监听 Claude 流式输出
   useEffect(() => {
     const cleanupId = ipc.onClaudeStream((data) => {
-      console.log('Stream update:', data.type, data.content.slice(0, 100))
+      if (!data) {
+        console.warn('Empty stream data received')
+        return
+      }
+      
+      console.log('Stream update:', data.type, data.content?.slice(0, 100))
 
       // 处理 done 事件
       if (data.type === 'done') {
@@ -350,11 +469,11 @@ export default function ConversationPage({
 
           if (!targetMessage) {
             // 消息不存在，创建新消息（直接使用当前内容）
-            console.log('Target message not found:', assistantId, 'creating with content length:', data.content.length)
+            console.log('Target message not found:', assistantId, 'creating with content length:', data.content?.length || 0)
             const assistantMessage: Message = {
               id: assistantId,
               role: 'assistant',
-              content: data.content,
+              content: data.content || '',
               timestamp: Date.now(),
             }
             return {
@@ -367,7 +486,7 @@ export default function ConversationPage({
           // 消息已存在，追加新内容
           const updatedMessage = {
             ...targetMessage,
-            content: targetMessage.content + data.content,
+            content: targetMessage.content + (data.content || ''),
           }
 
           return {
@@ -385,7 +504,7 @@ export default function ConversationPage({
         ipc.removeListener(cleanupId)
       }
     }
-  }, [currentConversationId])
+  }, [])
 
   // 点击外部关闭菜单（不包括上下文菜单区域）
   useEffect(() => {
@@ -493,7 +612,7 @@ export default function ConversationPage({
                 ? conv.messages
                 : [...conv.messages, userMessage],
               updatedAt: Date.now(),
-              title: conv.title === 'New Conversation' ? inputValue.slice(0, 30) : conv.title,
+              title: conv.title === 'New Agent' ? inputValue.slice(0, 30) : conv.title,
             }
           : conv
       )
@@ -514,11 +633,16 @@ export default function ConversationPage({
 
     try {
       // 发送消息，获取消息 ID（传递 conversationId 和 filterMode 以实现会话隔离和过滤）
-      const { messageId } = await ipc.claudeSend(currentConversation.id, projectPath, messageContent, filterMode)
+      const response = await ipc.claudeSend(currentConversation.id, projectPath, messageContent, filterMode)
+      const messageId = response?.messageId
 
-      // 存储 messageId -> assistantId 映射
-      messageIdMapRef.current.set(messageId, assistantId)
-      console.log('Message ID mapping established:', messageId, '->', assistantId)
+      if (messageId) {
+        // 存储 messageId -> assistantId 映射
+        messageIdMapRef.current.set(messageId, assistantId)
+        console.log('Message ID mapping established:', messageId, '->', assistantId)
+      } else {
+        console.warn('No messageId received from claudeSend')
+      }
 
       // 检查是否在模拟模式下
       if (!window.electronAPI?.claudeSend) {
@@ -724,18 +848,18 @@ Is there something specific you'd like to know or modify about this project?`
   }
 
   // 处理权限响应
-  const handlePermissionResponse = async (choice: string) => {
-    console.log('Permission response:', choice)
+  const handlePermissionResponse = useCallback(async (conversationId: string, choice: string) => {
+    console.log('Permission response:', { conversationId, choice })
 
     if (!permissionRequest) return
 
     // 将授权结果发送回给 Claude（通过 IPC，传递 conversationId）
-    await ipc.respondPermission(permissionRequest.conversationId, choice)
+    await ipc.respondPermission(conversationId, choice)
     console.log('Permission response sent to Claude:', choice)
 
     // 关闭弹窗
     setPermissionRequest(null)
-  }
+  }, [permissionRequest])
 
   // 处理信任文件夹响应
   const handleTrustResponse = async (trust: boolean) => {
@@ -1103,13 +1227,26 @@ Is there something specific you'd like to know or modify about this project?`
           <div className={`flex items-center gap-3 ${sidebarCollapsed && !isSmallScreen ? '' : 'mb-2 sm:mb-3'}`}>
             {(!sidebarCollapsed || isSmallScreen) && (
               <div className="p-2 rounded-xl bg-black">
-                <Sparkles size={sidebarCollapsed && !isSmallScreen ? 16 : 20} className="text-white" />
+                {sidebarMode === 'timeline' ? (
+                  <Clock size={sidebarCollapsed && !isSmallScreen ? 16 : 20} className="text-white" />
+                ) : (
+                  <Sparkles size={sidebarCollapsed && !isSmallScreen ? 16 : 20} className="text-white" />
+                )}
               </div>
             )}
             {(!sidebarCollapsed || isSmallScreen) && (
               <div className={isSmallScreen ? 'block' : 'hidden lg:block'}>
-                <h2 className="font-semibold text-primary text-sm">Conversations</h2>
-                <p className="text-xs text-secondary">{conversations.length} conversations</p>
+                {sidebarMode === 'timeline' ? (
+                  <>
+                    <h2 className="font-semibold text-primary text-sm">时间线</h2>
+                    <p className="text-xs text-secondary">操作历史</p>
+                  </>
+                ) : (
+                  <>
+                    <h2 className="font-semibold text-primary text-sm">Conversations</h2>
+                    <p className="text-xs text-secondary">{conversations.length} conversations</p>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -1139,8 +1276,8 @@ Is there something specific you'd like to know or modify about this project?`
             </button>
           )}
 
-          {/* 搜索框 */}
-          {(!sidebarCollapsed || isSmallScreen) && (
+          {/* 搜索框 - 只在对话列表模式显示 */}
+          {(!sidebarCollapsed || isSmallScreen) && sidebarMode === 'conversations' && (
             <div className="relative">
               <input
                 type="text"
@@ -1154,8 +1291,13 @@ Is there something specific you'd like to know or modify about this project?`
           )}
         </div>
 
-        {/* 对话列表 */}
+        {/* 对话列表或时间线内容 */}
         {(!sidebarCollapsed || isSmallScreen) && (
+          <>
+            {sidebarMode === 'timeline' ? (
+              /* 时间线内容 */
+              <TimelineContent />
+            ) : (
           <div className="flex-1 overflow-y-auto p-1 sm:p-3 space-y-2">
             {filteredConversations.map((conv) => (
               <div
@@ -1198,24 +1340,12 @@ Is there something specific you'd like to know or modify about this project?`
                         {conv.isPinned && <Pin size={12} className="text-purple-500 flex-shrink-0" />}
                         {(!sidebarCollapsed || isSmallScreen) && conv.title}
                       </div>
-                      {/* Happy 架构改进 - 活动状态指示点 */}
+                      {/* 活动状态指示点：显示thinking/active/初始化状态 */}
                       <ActivityDot
                         active={sessionActivity.get(conv.id)?.active ?? false}
                         thinking={sessionActivity.get(conv.id)?.thinking ?? false}
                         className="flex-shrink-0"
                       />
-                      {/* 呼吸灯：根据初始化状态显示不同颜色 */}
-                      {conv.id === currentConversationId && !sessionActivity.get(conv.id)?.thinking && (
-                        <div className={`
-                          absolute top-3 right-3 sm:top-4 sm:right-4
-                          w-2 h-2 rounded-full animate-pulse flex-shrink-0
-                          ${conv.claudeStatus === 'initializing'
-                            ? 'bg-red-500'
-                            : conv.claudeStatus === 'ready'
-                              ? 'bg-green-500'
-                              : 'bg-gray-500'}
-                        `} />
-                      )}
                     </div>
                     {(!sidebarCollapsed || isSmallScreen) && (
                       <div className="text-xs text-secondary/80">
@@ -1227,31 +1357,51 @@ Is there something specific you'd like to know or modify about this project?`
               </div>
             ))}
           </div>
+            )}
+          </>
         )}
 
-        {/* New Conversation 按钮和返回首页按钮 */}
+        {/* 底部按钮区域 */}
         {(!sidebarCollapsed || isSmallScreen) && (
           <div className="p-2 sm:p-4 border-t border-white/10 flex gap-2 sm:gap-3">
-            <button
-              onClick={() => {
-                handleNewConversation()
-                if (isSmallScreen) toggleSidebar()
-              }}
-              className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
-              title="New Conversation"
-            >
-              <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300 text-secondary hover:text-primary" />
-            </button>
-            <button
-              onClick={() => {
-                // 返回首页的逻辑
-                window.location.href = '/'
-              }}
-              className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
-              title="Back to Home"
-            >
-              <Home size={16} className="transition-transform duration-300 text-secondary hover:text-primary" />
-            </button>
+            {sidebarMode === 'conversations' ? (
+              <>
+                <button
+                  onClick={() => {
+                    handleNewConversation()
+                    if (isSmallScreen) toggleSidebar()
+                  }}
+                  className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+                  title="New Agent"
+                >
+                  <Plus size={16} className="group-hover:rotate-90 transition-transform duration-300 text-secondary hover:text-primary" />
+                </button>
+                <button
+                  onClick={() => {
+                    window.location.href = '/'
+                  }}
+                  className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+                  title="Back to Home"
+                >
+                  <Home size={16} className="transition-transform duration-300 text-secondary hover:text-primary" />
+                </button>
+                <button
+                  onClick={() => setSidebarMode('timeline')}
+                  className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+                  title="时间线"
+                >
+                  <Clock size={16} className="transition-transform duration-300 text-secondary hover:text-primary" />
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setSidebarMode('conversations')}
+                className="p-2 sm:p-2.5 rounded-full glass-button group hover:bg-white/20 transition-all"
+                title="返回Agent列表"
+              >
+                <ArrowLeft size={16} className="transition-transform duration-300 text-secondary hover:text-primary" />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -1272,14 +1422,17 @@ Is there something specific you'd like to know or modify about this project?`
               </button>
             )}
             {/* Happy 架构改进 - Claude 状态指示器 */}
-            <div className={`
-              w-2 h-2 rounded-full animate-pulse flex-shrink-0
-              ${currentConversation?.claudeStatus === 'initializing'
-                ? 'bg-red-500'
-                : currentConversation?.claudeStatus === 'ready'
-                  ? 'bg-green-500'
-                  : 'bg-gray-500'}
-            `} />
+            <div
+              key={`status-dot-${currentConversationId}`}
+              className={`
+                w-2 h-2 rounded-full animate-pulse flex-shrink-0
+                ${currentConversation?.claudeStatus === 'initializing'
+                  ? 'bg-red-500'
+                  : currentConversation?.claudeStatus === 'ready'
+                    ? 'bg-green-500'
+                    : 'bg-gray-500'}
+              `}
+            />
             {/* Happy 架构改进 - 详细活动状态指示器 */}
             {currentConversationId && (
               <ActivityIndicator
@@ -1353,7 +1506,7 @@ Is there something specific you'd like to know or modify about this project?`
             <div className="h-full flex items-center justify-center px-4">
               <div className="text-center max-w-md">
                 <h3 className="text-xl sm:text-2xl font-semibold text-secondary mb-2 sm:mb-3">
-                  Start a new conversation
+                  Start a new agent
                 </h3>
                 <p className="text-sm sm:text-base text-secondary/70">
                   Ask Claude Code anything about your project
@@ -1373,8 +1526,8 @@ Is there something specific you'd like to know or modify about this project?`
               width="100%"
             >
               {/* @ts-expect-error react-window类型定义与版本不兼容 */}
-              {(props: any) => {
-                const { rowIndex, style }: { rowIndex: number; style: React.CSSProperties } = props;
+              {(props: { rowIndex: number; style: React.CSSProperties }) => {
+                const { rowIndex, style } = props;
                 const message = currentConversation?.messages[rowIndex];
                 if (!message) return <></>;
 
@@ -1657,9 +1810,6 @@ Is there something specific you'd like to know or modify about this project?`
         )}
       </div>
 
-      {/* TimelinePanel - 时间线面板 */}
-      <TimelinePanel className="timeline-sidebar" />
-
       {/* 文件引用菜单 */}
       <FileReferenceMenu
         isVisible={fileMenuVisible}
@@ -1706,49 +1856,12 @@ Is there something specific you'd like to know or modify about this project?`
       )}
 
       {/* 权限请求弹窗 */}
-      {permissionRequest && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="glass-card rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-fadeIn">
-            <h3 className="text-lg font-semibold text-primary mb-2">Permission Required</h3>
-            <p className="text-sm text-secondary mb-2">{permissionRequest.toolName}</p>
-            <p className="text-xs text-secondary/70 mb-6 font-mono">{permissionRequest.details}</p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => handlePermissionResponse('yes')}
-                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
-              >
-                Allow Once
-              </button>
-              <button
-                onClick={() => handlePermissionResponse('yesAlways')}
-                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
-              >
-                Allow Always
-              </button>
-              <button
-                onClick={() => handlePermissionResponse('no')}
-                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
-              >
-                Deny Once
-              </button>
-              <button
-                onClick={() => handlePermissionResponse('noAlways')}
-                className="px-4 py-2.5 rounded-xl glass-button text-sm font-medium text-secondary hover:text-primary transition-colors"
-              >
-                Deny Always
-              </button>
-            </div>
-            <div className="mt-3">
-              <button
-                onClick={() => handlePermissionResponse('exit')}
-                className="w-full px-4 py-2.5 rounded-xl bg-red-500/20 text-red-500 text-sm font-medium hover:bg-red-500/30 transition-colors"
-              >
-                Exit Conversation
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PermissionRequestDialog
+        isOpen={!!permissionRequest}
+        request={permissionRequest}
+        onRespond={handlePermissionResponse}
+        onClose={() => setPermissionRequest(null)}
+      />
 
       {/* 模型设置弹窗 */}
       {showModelSettings && (

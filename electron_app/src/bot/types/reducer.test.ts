@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createReducer, type ReducerState } from './reducer'
+import { createReducer } from './reducer'
 
 describe('Reducer State', () => {
   describe('createReducer', () => {

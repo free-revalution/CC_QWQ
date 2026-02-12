@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@import './components/ui/TimelinePanel.css';
-
 /* ========================================
    液态玻璃效果主题配置
    ======================================== */

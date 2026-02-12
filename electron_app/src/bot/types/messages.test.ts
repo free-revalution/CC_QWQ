@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import type {
+  UserTextMessage, AgentTextMessage, ToolCallMessage,
+  ToolResultMessage, PermissionMessage, EventMessage, ErrorMessage
+} from './messages'
 import {
-  Message, UserTextMessage, AgentTextMessage, ToolCallMessage,
-  ToolResultMessage, PermissionMessage, EventMessage, ErrorMessage,
   isUserTextMessage, isAgentTextMessage, isToolCallMessage,
   isToolResultMessage, isPermissionMessage, isEventMessage, isErrorMessage
 } from './messages'

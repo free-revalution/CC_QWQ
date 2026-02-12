@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { messageReducer, createReducerState, type ClaudeRawMessage } from './reducer';
 import type { ReducerState } from '../types/reducer';
-import type { Message, UserTextMessage, AgentTextMessage, ToolCallMessage, EventMessage } from '../types/messages';
+import type { UserTextMessage, AgentTextMessage, ToolCallMessage, EventMessage } from '../types/messages';
 
 describe('messageReducer', () => {
   let state: ReducerState;
@@ -48,7 +48,7 @@ describe('messageReducer', () => {
         id: 'msg-2',
         role: 'user',
         timestamp: 1234567890,
-        content: 'Plain text content'
+        content: [{ type: 'text', text: 'Plain text content' }]
       };
 
       const result = messageReducer(state, [rawMessage]);
@@ -492,7 +492,7 @@ describe('messageReducer', () => {
         id: 'edge-2',
         role: 'user',
         timestamp: 1234567890,
-        content: null as unknown []
+        content: null as unknown as unknown[]
       };
 
       const result = messageReducer(state, [rawMessage]);

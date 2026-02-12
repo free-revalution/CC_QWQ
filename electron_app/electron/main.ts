@@ -1,9 +1,10 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import * as url from 'node:url'
-import pkg from 'node-pty'
+import * as os from 'node:os'
+import * as pty from 'node-pty'
 import type { IPty } from 'node-pty'
+import WebSocket from 'ws'
 import { OperationLogger } from './operationLogger'
 import { ApprovalEngine } from './approvalEngine'
 import { OperationExecutor } from './operationExecutor'
@@ -12,11 +13,19 @@ import { RollbackEngine } from './rollbackEngine'
 import { LogExporter } from './logExporter'
 import { MCPProxyServer } from './mcpProxyServer'
 import { getBrowserManager } from './browserManager'
-import type { LogFilter } from '../src/types/operation'
 
-const { spawn: spawnPty } = pkg
+// 扩展全局类型
+declare global {
+  var mcpProxyServer: MCPProxyServer | undefined
+}
 
-const __dirname = path.dirname(url.fileURLToPath(import.meta.url))
+
+const { spawn: spawnPty } = pty
+
+// 获取正确的目录路径（兼容开发和生产环境）
+// esbuild 打包后，__dirname 会指向输出目录
+const ELECTRON_DIST_DIR = __dirname
+console.log('[Main] Electron dist directory:', ELECTRON_DIST_DIR)
 
 // ==================== Happy 架构改进 - 类型定义 ====================
 
@@ -83,7 +92,7 @@ interface ActivityUpdate {
 
 /**
  * 清理 ANSI 转义码（包括所有控制序列）
- * 增强版本：捕获更多类型的转义序列残留
+ * 增强版本：捕获更多类型的转义序列残留，包括 24-bit RGB 颜色代码
  */
 /* eslint-disable no-control-regex */
 function stripAnsiCodes(text: string): string {
@@ -93,6 +102,15 @@ function stripAnsiCodes(text: string): string {
   result = result.replace(/\x1b\[[0-9;]*[mGKH]/g, '')
   result = result.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
   result = result.replace(/\x1b\[[0-9;]*R/g, '')
+
+  // 24-bit RGB 颜色代码 (SGR 38;2 和 48;2) - 完整和不完整序列
+  // 完整格式: ESC[38;2;r;g;b*m 或 ESC[48;2;r;g;b*m
+  result = result.replace(/\x1b\[(38|48);2;\d+;\d+;\d+m/g, '')
+  // 不完整格式（缺少 ESC 前缀或末尾 m）
+  result = result.replace(/\[(38|48);2;\d+;\d+;\d+m/g, '')
+  result = result.replace(/\[(38|48);2;\d+;\d+;\d*/g, '')
+  result = result.replace(/\[(38|48);2;\d+;\d*/g, '')
+  result = result.replace(/\[(38|48);2;\d*/g, '')
 
   // DEC 私有模式序列: ESC [ ? ...
   result = result.replace(/\x1b\[\?[0-9;]*[a-zA-Z]/g, '')
@@ -113,6 +131,9 @@ function stripAnsiCodes(text: string): string {
   result = result.replace(/\[\d{2};\d+;\d+[m?]/g, '')
   result = result.replace(/\[\d+;\d+;\d+m/g, '')
   result = result.replace(/\d{2};\d+;\d+[m?]/g, '')
+  // 额外的残留格式：[38;2;1 或 [38;2;153;153;153 或 [38;2;153;153
+  result = result.replace(/\[\d{2};\d+;\d*;?\d*;?\d*/g, '')
+  result = result.replace(/\d{2};\d+;\d*;?\d*/g, '')
 
   // 退格符
   result = result.replace(/\x08/g, '')
@@ -136,9 +157,57 @@ function detectTrustPrompt(text: string): boolean {
 
 /**
  * 检测是否包含权限请求提示（只检测真正的权限请求，不是正常对话）
+ * 同时解析选项列表用于前端显示交互式对话框
  */
-function detectPermissionPrompt(text: string): { hasPrompt: boolean; toolName?: string; details?: string; promptType?: 'edit' | 'write' | 'generic' } {
+function detectPermissionPrompt(text: string): { hasPrompt: boolean; toolName?: string; details?: string; promptType?: 'edit' | 'write' | 'generic' | 'tool-permission'; options?: string[]; question?: string } {
   const cleaned = stripAnsiCodes(text)
+
+  // 检测 "Do you want to proceed?" 模式（工具使用权限）
+  // 格式：
+  // Do you want to proceed?
+  //  1. Yes
+  //  2. Yes, and don't ask again for ...
+  //  3. Type here to tell Claude what to do differently
+  if (cleaned.includes('Do you want to proceed?')) {
+    const options: string[] = []
+    const lines = cleaned.split('\n')
+    let question = 'Do you want to proceed?'
+    let toolName = 'unknown'
+
+    // 尝试从上下文中提取工具名称
+    const toolMatch = cleaned.match(/⏺\s*(\w+)\s*\(/)
+    if (toolMatch) {
+      toolName = toolMatch[1]
+    }
+
+    for (const line of lines) {
+      const trimmed = line.trim()
+      // 解析选项：匹配 "1. xxx", "2. xxx", "3. xxx" 格式
+      const optionMatch = trimmed.match(/^(\d+)\.\s*(.+)$/)
+      if (optionMatch) {
+        const optionText = optionMatch[2].trim()
+        // 跳过 "Type here" 选项，因为这个需要输入框
+        if (!optionText.startsWith('Type here')) {
+          options.push(optionText)
+        } else {
+          // 为 "Type here" 选项添加特殊标记
+          options.push('__INPUT__')
+        }
+      }
+    }
+
+    // 如果解析到选项，返回交互式权限请求
+    if (options.length > 0) {
+      return {
+        hasPrompt: true,
+        toolName,
+        details: cleaned.slice(0, 500),
+        promptType: 'tool-permission',
+        options,
+        question
+      }
+    }
+  }
 
   // 检测 "Do you want to make this edit to" 模式（文件编辑权限）
   if (cleaned.includes('Do you want to make this edit to') && cleaned.includes('?')) {
@@ -270,18 +339,40 @@ function shouldFilterLine(line: string, trimmed: string): { filter: boolean; ded
     return { filter: true, reason: 'border' }
   }
 
-  // 3. 用户输入逐字显示 - `❯ ` 开头的行（包括空提示符）
+  // 3. 权限询问选项 - 过滤掉，由 PermissionRequestDialog 显示
+  // 格式: "1. Yes", "2. Yes, and don't ask again...", "3. Type here..."
+  // 也匹配带前导空格的格式
+  if (/^\d+\.\s*(Yes|No|Allow|Deny|Type\s+here)/i.test(trimmed)) {
+    return { filter: true, reason: 'permission-option' }
+  }
+
+  // 3b. 权限选项续行 - 路径或缩进的选项文本
+  // 格式: "      /Users/xxx/xxx" 或 "   commands in" 等
+  if (/^\/[\w/.-]+$/.test(trimmed)) {
+    return { filter: true, reason: 'permission-option-path' }
+  }
+  // 缩进的权限相关文本（通常是选项的续行）
+  if (/^\s{2,}(\/|Type\s+here|commands\s+in|during\s+this\s+session)/i.test(trimmed)) {
+    return { filter: true, reason: 'permission-option-continuation' }
+  }
+
+  // 3c. "Do you want to proceed?" 提示
+  if (/^Do you want to proceed\??$/i.test(trimmed)) {
+    return { filter: true, reason: 'permission-prompt' }
+  }
+
+  // 4. 用户输入逐字显示 - `❯ ` 开头的行（包括空提示符）
   if (trimmed.startsWith('❯')) {
     return { filter: true, reason: 'user-input-display' }
   }
 
-  // 4. Claude 操作状态指示符 - 需要显示但去重，并且重置去重集合
-  // 4a. `✻` 开头的行（Proofing、Nesting 等状态）
+  // 5. Claude 操作状态指示符 - 需要显示但去重，并且重置去重集合
+  // 5a. `✻` 开头的行（Proofing、Nesting 等状态）
   if (trimmed.startsWith('✻')) {
     return { filter: false, deduplicate: true, resetDeduplication: false, reason: 'operation-status-asterisk' }
   }
 
-  // 4b. `⏺` 开头的行（工具操作如 Write、Read）- 这个会重置去重集合，因为表示新的操作开始
+  // 5b. `⏺` 开头的行（工具操作如 Write、Read）- 这个会重置去重集合，因为表示新的操作开始
   if (trimmed.startsWith('⏺')) {
     return { filter: false, deduplicate: true, resetDeduplication: true, reason: 'operation-status-circle' }
   }
@@ -802,6 +893,7 @@ interface ClaudeSession {
   lastSentContent: string  // 上次发送给前端的内容（用于去重）
   lastStatusLines: Set<string>  // 上次发送的状态行（用于去重操作状态指示）
   filterMode: 'talk' | 'develop'  // 过滤模式：talk 只显示回复文本，develop 显示操作过程
+  cleanupTimers: NodeJS.Timeout[]  // 需要清理的定时器列表（用于资源清理）
 }
 
 let mainWindow: BrowserWindow | null
@@ -828,6 +920,9 @@ let wss: WebSocketServer | null = null
 
 // Claude 会话管理器 - 以对话 ID 为 key（每个对话独立的 PTY 会话）
 const claudeSessions = new Map<string, ClaudeSession>()
+
+// 会话创建锁 - 防止并发创建同一会话
+const sessionCreationLocks = new Map<string, Promise<ClaudeSession>>()
 
 // 当前活跃的消息 ID（用于流式输出匹配）
 const activeMessageId = new Map<string, string>() // conversationId -> messageId
@@ -910,7 +1005,7 @@ class SessionStateManager {
   private states: Map<string, SessionState> = new Map()
   private activityAccumulator: ActivityAccumulator
 
-  constructor(_mobileClients: Set<WebSocketClient>) {
+  constructor() {
     this.activityAccumulator = new ActivityAccumulator(
       (updates) => this.broadcastActivityUpdates(updates),
       2000
@@ -1003,9 +1098,13 @@ class SessionStateManager {
 }
 
 // 创建会话状态管理器实例
-const sessionStateManager = new SessionStateManager(mobileClients)
+const sessionStateManager = new SessionStateManager()
 
 function createWindow() {
+  // 使用 ELECTRON_DIST_DIR 确保 preload 路径指向 dist-electron 目录
+  const preloadPath = path.resolve(ELECTRON_DIST_DIR, 'preload.js')
+  console.log('[Main] Preload path:', preloadPath)
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -1014,7 +1113,7 @@ function createWindow() {
     titleBarStyle: 'hiddenInset', // macOS 样式：隐藏标题栏背景但保留红绿灯按钮，内容延伸到标题栏区域
     frame: process.platform !== 'darwin', // 在 macOS 上使用原生 frame，其他平台隐藏
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
       webSecurity: false, // 开发模式禁用 web 安全
@@ -1029,7 +1128,7 @@ function createWindow() {
     mainWindow.webContents.openDevTools()
   } else {
     // 生产模式：从打包后的文件加载
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
+    mainWindow.loadFile(path.join(ELECTRON_DIST_DIR, '../dist/index.html'))
   }
 
   // 页面加载完成后显示窗口
@@ -1117,11 +1216,7 @@ async function startWebSocketServer() {
       wss = null
     }
 
-    // 使用 createRequire 加载 CommonJS 版本的 ws
-    const { createRequire } = await import('module')
-    const _require = createRequire(import.meta.url)
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- 动态加载CommonJS模块
-    const WebSocketServer = _require('ws').Server
+    const WebSocketServer = WebSocket.Server
     wss = new WebSocketServer({ port: PORT })
 
     // 处理连接事件
@@ -1297,9 +1392,10 @@ async function startWebSocketServer() {
             mobileClients.delete(ws)
           })
 
-          // 处理错误事件
+          // 处理错误事件 - 确保从集合中移除
           ws.on('error', (error: Error) => {
             console.error('WebSocket error:', error)
+            mobileClients.delete(ws)
           })
         }
       })
@@ -1329,6 +1425,9 @@ function destroyClaudeSession(conversationId: string): void {
     if (session.timeoutTimer) {
       clearTimeout(session.timeoutTimer)
     }
+
+    // 清理所有 tracked timers
+    cleanupSessionTimers(session)
   } catch (error) {
     console.error('[Claude] Error destroying session:', error)
   }
@@ -1337,10 +1436,42 @@ function destroyClaudeSession(conversationId: string): void {
   claudeSessions.delete(conversationId)
   activeMessageId.delete(conversationId)
   conversationProjectMap.delete(conversationId)
+  sessionCreationLocks.delete(conversationId)
+}
+
+/**
+ * 跟踪并清理会话定时器
+ * 防止定时器泄漏，确保所有定时器都被正确清理
+ */
+function trackSessionTimer(session: ClaudeSession, timer: NodeJS.Timeout | null): void {
+  if (timer) {
+    session.cleanupTimers.push(timer)
+  }
+}
+
+/**
+ * 清理会话的所有定时器
+ * 在会话销毁时调用
+ */
+function cleanupSessionTimers(session: ClaudeSession): void {
+  // 清理所有 tracked timers
+  for (const timer of session.cleanupTimers) {
+    clearTimeout(timer)
+  }
+  session.cleanupTimers = []
 }
 
 // 获取或创建 Claude 会话（每个对话一个独立的 PTY 会话）
+// 使用锁机制防止并发创建同一会话
 function getOrCreateClaudeSession(conversationId: string, projectPath: string): ClaudeSession {
+  // 检查是否有正在创建中的会话
+  const pendingCreation = sessionCreationLocks.get(conversationId)
+  if (pendingCreation) {
+    console.log('[Claude] Waiting for pending session creation:', conversationId)
+    // 这里不能同步等待 Promise，所以直接返回 null 并让调用者处理
+    // 但由于这是同步函数，我们改为检查现有会话
+  }
+
   const session = claudeSessions.get(conversationId)
 
   // 检查现有会话是否还活着
@@ -1353,7 +1484,15 @@ function getOrCreateClaudeSession(conversationId: string, projectPath: string): 
       console.log('[Claude] Existing session dead for conversation:', conversationId)
       claudeSessions.delete(conversationId)
       conversationProjectMap.delete(conversationId)
+      sessionCreationLocks.delete(conversationId)
     }
+  }
+
+  // 检查是否有正在创建中的锁
+  if (sessionCreationLocks.has(conversationId)) {
+    console.log('[Claude] Session creation already in progress for:', conversationId)
+    // 抛出错误让调用者知道需要等待
+    throw new Error('Session creation already in progress')
   }
 
   // 创建新会话
@@ -1387,6 +1526,7 @@ function getOrCreateClaudeSession(conversationId: string, projectPath: string): 
     lastSentContent: '',
     lastStatusLines: new Set<string>(),
     filterMode: 'develop',  // 默认使用 develop 模式
+    cleanupTimers: [],  // 初始化定时器清理列表
   }
 
   // 设置 PTY 数据处理器
@@ -1408,6 +1548,7 @@ function getOrCreateClaudeSession(conversationId: string, projectPath: string): 
     claudeSessions.delete(conversationId)
     activeMessageId.delete(conversationId)
     conversationProjectMap.delete(conversationId)
+    sessionCreationLocks.delete(conversationId)
   })
 
   claudeSessions.set(conversationId, newSession)
@@ -1545,6 +1686,10 @@ function setupPTYDataHandler(session: ClaudeSession, conversationId: string): vo
             projectPath: session.projectPath,
             toolName: permissionCheck.toolName || 'unknown',
             details: stripAnsiCodes(session.buffer),
+            promptType: permissionCheck.promptType,
+            options: permissionCheck.options,
+            question: permissionCheck.question,
+            filterMode: session.filterMode, // 当前模式：develop 或 talk
           })
         }
         session.buffer = ''
@@ -1938,65 +2083,101 @@ function broadcastToMobileClients(message: BroadcastMessage) {
 
 // IPC 处理器：打开文件夹选择器
 ipcMain.handle('open-folder', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-    title: 'Select Project Folder',
-  })
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openDirectory'],
+      title: 'Select Project Folder',
+    })
 
-  if (result.canceled || result.filePaths.length === 0) {
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    const selectedPath = result.filePaths[0]
+    currentProjectPath = selectedPath // 存储当前项目路径
+    return selectedPath
+  } catch (error) {
+    console.error('[open-folder] Error:', error)
     return null
   }
-
-  const selectedPath = result.filePaths[0]
-  currentProjectPath = selectedPath // 存储当前项目路径
-  return selectedPath
 })
 
 // IPC 处理器：打开文件选择器
 ipcMain.handle('open-file', async () => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openFile'],
-    title: 'Select File to Attach',
-    filters: [
-      { name: 'All Files', extensions: ['*'] },
-      { name: 'Code Files', extensions: ['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'go', 'rs'] },
-      { name: 'Text Files', extensions: ['txt', 'md', 'json', 'yaml', 'yml'] },
-    ],
-  })
+  try {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: 'Select File to Attach',
+      filters: [
+        { name: 'All Files', extensions: ['*'] },
+        { name: 'Code Files', extensions: ['js', 'ts', 'jsx', 'tsx', 'py', 'java', 'cpp', 'c', 'go', 'rs'] },
+        { name: 'Text Files', extensions: ['txt', 'md', 'json', 'yaml', 'yml'] },
+      ],
+    })
 
-  if (result.canceled || result.filePaths.length === 0) {
+    if (result.canceled || result.filePaths.length === 0) {
+      return null
+    }
+
+    return result.filePaths[0]
+  } catch (error) {
+    console.error('[open-file] Error:', error)
     return null
   }
-
-  return result.filePaths[0]
 })
 
 // IPC 处理器：选择文件（用于文件附件功能）
 ipcMain.handle('select-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openFile'],
-    filters: [
-      { name: 'Code Files', extensions: ['js', 'ts', 'py', 'java', 'cpp', 'c', 'h', 'cs', 'go', 'rs'] },
-      { name: 'Text Files', extensions: ['txt', 'md', 'json', 'yaml', 'yml', 'xml', 'csv'] },
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] },
-      { name: 'All Files', extensions: ['*'] }
-    ]
-  })
+  try {
+    // 检查 mainWindow 是否存在
+    if (!mainWindow) {
+      return { success: false, error: 'Main window not available' }
+    }
 
-  if (result.canceled) return { success: false }
-  return { success: true, filePath: result.filePaths[0] }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [
+        { name: 'Code Files', extensions: ['js', 'ts', 'py', 'java', 'cpp', 'c', 'h', 'cs', 'go', 'rs'] },
+        { name: 'Text Files', extensions: ['txt', 'md', 'json', 'yaml', 'yml', 'xml', 'csv'] },
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (result.canceled) return { success: false }
+    return { success: true, filePath: result.filePaths[0] }
+  } catch (error) {
+    console.error('[select-file] Error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 })
 
 // IPC 处理器：设置当前项目路径
 ipcMain.handle('set-project-path', async (_event, projectPath: string) => {
-  currentProjectPath = projectPath
-  return { success: true }
+  try {
+    if (!projectPath || typeof projectPath !== 'string') {
+      return { success: false, error: 'Invalid project path' }
+    }
+    currentProjectPath = projectPath
+    return { success: true }
+  } catch (error) {
+    console.error('[set-project-path] Error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 })
 
 // IPC 处理器：发送消息给 Claude Code（返回消息 ID）
 ipcMain.handle('claude-send', async (_event, conversationId: string, projectPath: string, message: string, filterMode?: 'talk' | 'develop') => {
-  const messageId = await callClaude(conversationId, projectPath, message, filterMode)
-  return { messageId }
+  try {
+    if (!conversationId || !projectPath || !message) {
+      return { success: false, error: 'Missing required parameters' }
+    }
+    const messageId = await callClaude(conversationId, projectPath, message, filterMode)
+    return { success: true, messageId }
+  } catch (error) {
+    console.error('[claude-send] Error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 })
 
 // IPC 处理器：获取 conversation 列表（用于移动端同步）
@@ -2075,16 +2256,20 @@ ipcMain.handle('upload-file', async (_event, filePath: string, conversationId: s
 
 // IPC 处理器：设置连接密码
 ipcMain.handle('set-link-password', async (_event, password: string) => {
-  linkPassword = password
-  // 重启 WebSocket 服务器以应用新密码
-  startWebSocketServer()
-  return { success: true, port: PORT }
+  try {
+    linkPassword = password || ''
+    // 重启 WebSocket 服务器以应用新密码
+    startWebSocketServer()
+    return { success: true, port: PORT }
+  } catch (error) {
+    console.error('[set-link-password] Error:', error)
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' }
+  }
 })
 
 // IPC 处理器：获取连接信息
 ipcMain.handle('get-connection-info', async () => {
   // 获取本机 IP 地址
-  const os = await import('os')
   const interfaces = os.networkInterfaces()
   let localIP = '127.0.0.1'
 
@@ -2139,6 +2324,20 @@ ipcMain.handle('add-chat-message', async (_event, message: ChatMessage) => {
 
 // 权限规则存储（可以后续改为持久化存储）
 const permissionRules: PermissionRule[] = []
+
+/**
+ * 匹配权限请求模式
+ */
+function matchPattern(request: PermissionRequest, pattern: string): boolean {
+  // 简单的字符串包含匹配
+  if (request.resourcePath && request.resourcePath.includes(pattern)) {
+    return true
+  }
+  if (request.command && request.command.includes(pattern)) {
+    return true
+  }
+  return false
+}
 
 // IPC 处理器：请求权限
 ipcMain.handle('request-permission', async (event, request: PermissionRequest): Promise<PermissionResponse> => {
@@ -2232,18 +2431,29 @@ ipcMain.handle('respond-trust', async (_event, conversationId: string, trust: bo
     const userMessage = session.lastUserMessage
     if (userMessage) {
       console.log('Will check for PTY output and resend message if needed:', userMessage)
-      const checkInterval = setInterval(() => {
+
+      // 使用辅助函数跟踪定时器
+      let checkInterval: NodeJS.Timeout | null = null
+      let outerTimeout: NodeJS.Timeout | null = null
+      let innerTimeout: NodeJS.Timeout | null = null
+
+      checkInterval = setInterval(() => {
         // 如果收到PTY数据，取消定时器
         if (session.buffer.length > 0) {
           console.log('PTY output detected, canceling message resend')
-          clearInterval(checkInterval)
+          if (checkInterval) clearInterval(checkInterval)
+          if (outerTimeout) clearTimeout(outerTimeout)
           return
         }
       }, 500)
 
+      // 跟踪定时器以便清理
+      trackSessionTimer(session, checkInterval)
+
       // 2秒后检查，如果没有输出则重新发送用户消息
-      setTimeout(() => {
-        clearInterval(checkInterval)
+      outerTimeout = setTimeout(() => {
+        if (checkInterval) clearInterval(checkInterval)
+
         console.log('>>> 2 second check - Buffer length:', session.buffer.length)
         console.log('>>> Last user message:', session.lastUserMessage)
 
@@ -2260,14 +2470,17 @@ ipcMain.handle('respond-trust', async (_event, conversationId: string, trust: bo
             console.log('>>> Sending Ctrl+U to clear input buffer')
             session.terminal.write('\x15') // Ctrl+U
 
-            setTimeout(() => {
+            innerTimeout = setTimeout(() => {
               console.log('>>> Sending user message')
               session.terminal.write(userMessage + '\n')
               console.log('>>> Message resent to PTY')
             }, 100)
 
+            // 跟踪定时器
+            trackSessionTimer(session, innerTimeout)
+
             // 5秒后再次检查是否有响应
-            setTimeout(() => {
+            const finalCheck = setTimeout(() => {
               console.log('>>> 5 second post-resend check - Buffer length:', session.buffer.length)
               if (session.buffer.length > 0) {
                 console.log('>>> PTY responded after resend!')
@@ -2276,6 +2489,9 @@ ipcMain.handle('respond-trust', async (_event, conversationId: string, trust: bo
                 console.log('>>> PTY still not responding after resend')
               }
             }, 6000)
+
+            // 跟踪最终检查定时器
+            trackSessionTimer(session, finalCheck)
           } catch {
             console.log('>>> PTY process is NOT running!')
           }
@@ -2284,6 +2500,9 @@ ipcMain.handle('respond-trust', async (_event, conversationId: string, trust: bo
           console.log('>>> Output:', session.buffer.slice(0, 100))
         }
       }, 2000)
+
+      // 跟踪外层超时定时器
+      trackSessionTimer(session, outerTimeout)
     }
 
     // 重置超时定时器，给PTY更多时间响应
@@ -2301,47 +2520,45 @@ ipcMain.handle('respond-trust', async (_event, conversationId: string, trust: bo
 
 // IPC 处理器：响应权限请求（将用户选择发送回 Claude PTY）
 ipcMain.handle('respond-permission', async (_event, conversationId: string, choice: string) => {
-  console.log('Permission response:', conversationId, choice)
+  console.log('[Permission Response] conversationId:', conversationId, 'choice:', choice)
 
   const session = claudeSessions.get(conversationId)
   if (!session) {
-    console.log('No Claude session found for conversation:', conversationId)
+    console.log('[Permission Response] No Claude session found for conversation:', conversationId)
     return { success: false, error: 'Session not found' }
   }
 
   // 将用户选择转换为 Claude 期望的输入
+  // Claude CLI 使用数字来选择选项：1 = Yes, 2 = Yes, and don't ask again, 3 = custom input
   let responseInput = ''
-  switch (choice) {
-    case 'yes':
-      responseInput = 'y\n'
-      break
-    case 'yesAlways':
-      responseInput = 'ya\n'
-      break
-    case 'no':
-      responseInput = 'n\n'
-      break
-    case 'noAlways':
-      responseInput = 'na\n'
-      break
-    case 'exit':
-      responseInput = 'exit\n'
-      break
-    default:
-      responseInput = 'n\n'
+
+  // 检测选项类型
+  if (choice === 'Yes' || choice.toLowerCase() === 'yes') {
+    // 选项 1: Yes
+    responseInput = '1\n'
+  } else if (choice.startsWith('Yes, and don\'t ask again') || choice.includes("don't ask again")) {
+    // 选项 2: Yes, and don't ask again for...
+    responseInput = '2\n'
+  } else if (choice === '__INPUT__' || choice.startsWith('Type here')) {
+    // 自定义输入 - 这个情况不应该出现在这里，因为前端会处理
+    responseInput = '3\n'
+  } else {
+    // 自定义文本输入 - 直接发送文本
+    responseInput = choice + '\n'
   }
+
+  console.log('[Permission Response] Sending to Claude:', JSON.stringify(responseInput))
 
   try {
     session.terminal.write(responseInput)
     session.state = 'processing'
     session.buffer = '' // 清空缓冲区，准备接收新的输出
-    // 重置已发送内容长度（权限响应后会有新输出）
-    // lastSentBufferLength removed
-    // 不要清空 lastUserMessage，因为可能还在处理同一轮对话
-    console.log('Sent permission response to Claude PTY:', responseInput.trim())
+    // 重置超时定时器
+    resetTimeoutTimer(session, conversationId)
+    console.log('[Permission Response] Sent permission response to Claude PTY:', responseInput.trim())
     return { success: true }
   } catch (error) {
-    console.error('Failed to write permission response to PTY:', error)
+    console.error('[Permission Response] Failed to write permission response to PTY:', error)
     return { success: false, error: (error as Error).message }
   }
 })
@@ -2378,9 +2595,6 @@ ipcMain.handle('initialize-claude', async (_event, conversationId: string, proje
 
 // IPC 处理器：读取目录结构
 ipcMain.handle('read-directory', async (_event, dirPath: string) => {
-  const fs = await import('fs')
-  const path = await import('path')
-
   interface FileNode {
     name: string
     path: string
@@ -2847,23 +3061,7 @@ ipcMain.handle('search-files', async (_event, projectPath: string, query: string
   }
 })
 
-// 简单的模式匹配函数
-function matchPattern(request: PermissionRequest, pattern: string): boolean {
-  // 简单的通配符匹配
-  const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$')
 
-  // 检查资源路径
-  if (request.resourcePath && regex.test(request.resourcePath)) {
-    return true
-  }
-
-  // 检查命令
-  if (request.command && regex.test(request.command)) {
-    return true
-  }
-
-  return false
-}
 
 // ==================== 项目本地存储 ====================
 
@@ -2974,7 +3172,7 @@ ipcMain.on('subscribe-to-logs', (event) => {
 })
 
 // 获取历史日志
-ipcMain.handle('get-logs', async (_event, filter?: LogFilter) => {
+ipcMain.handle('get-logs', async (_event, filter?: unknown) => {
   console.log('[IPC] get-logs called, filter:', filter)
   try {
     if (filter) {
@@ -3218,17 +3416,12 @@ app.on('ready', async () => {
     console.log('[Main] MCP Proxy Server started successfully')
 
     // 存储到全局以便后续使用
-    ;(global as any).mcpProxyServer = mcpProxyServer
+    global.mcpProxyServer = mcpProxyServer
   } catch (error) {
     console.error('[Main] Failed to start MCP Proxy Server:', error)
   }
-  // Initialize browser manager
-  try {
-    await getBrowserManager().initialize()
-    console.log('[Main] Browser manager initialized')
-  } catch (error) {
-    console.error('[Main] Failed to initialize browser manager:', error)
-  }
+  // 注意：浏览器管理器改为按需初始化，不再在启动时自动打开浏览器
+  // 当对话中涉及到浏览器操作时，BrowserManager 会自动初始化
 })
 
 app.on('window-all-closed', () => {
@@ -3250,8 +3443,8 @@ app.on('before-quit', async () => {
   }
 
   // 停止 MCP 代理服务器
-  if ((global as any).mcpProxyServer) {
-    await (global as any).mcpProxyServer.stop()
+  if (global.mcpProxyServer) {
+    await global.mcpProxyServer.stop()
   }
   // Close browser manager before quitting
   try {

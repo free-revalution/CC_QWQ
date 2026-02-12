@@ -12,7 +12,7 @@ import type {
   ApprovalDecision,
   ToolCallRequest,
   UserPreferences
-} from '../src/types/operation.js'
+} from '../src/types/operation'
 
 // Use os.homedir() as fallback for systems where process.env.HOME is undefined
 const homeDir = process.env.HOME || os.homedir()

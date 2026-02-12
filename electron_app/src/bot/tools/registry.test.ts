@@ -8,7 +8,7 @@ import {
   shouldTruncateOutput,
   extractToolKeyInfo
 } from './registry'
-import type { ToolCallMessage, BashToolInput, EditToolInput, WriteToolInput, TodoWriteToolInput } from '../types/messages'
+import type { ToolCallMessage } from '../types/messages'
 
 describe('Tool View Registry', () => {
   const createMockTool = (

@@ -185,7 +185,7 @@ export function createConversation(projectPath: string): Conversation {
   return {
     id: `conv-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
     projectId: projectPath,
-    title: 'New Conversation',
+    title: 'New Agent',
     messages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),

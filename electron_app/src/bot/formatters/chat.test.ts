@@ -25,7 +25,7 @@ import type {
 
 describe('Chat Formatter', () => {
   // Helper to create a base message
-  const createBaseMessage = (kind: Message['kind'], platform: 'whatsapp' | 'feishu' = 'whatsapp'): Omit<Message, 'kind' | 'timestamp'> => ({
+  const createBaseMessage = (_kind: Message['kind'], platform: 'whatsapp' | 'feishu' = 'whatsapp'): Omit<Message, 'kind' | 'timestamp'> => ({
     id: 'msg-123',
     platform,
     conversationId: 'conv-456'

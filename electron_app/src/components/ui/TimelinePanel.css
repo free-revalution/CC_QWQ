@@ -52,11 +52,24 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s ease;
 }
 
 .timeline-collapse-btn:hover {
   background: var(--hover-background, #333);
   color: var(--text-primary, #fff);
+}
+
+/* 折叠状态下的按钮样式 - 与左侧边栏保持一致 */
+.timeline-panel.collapsed .timeline-collapse-btn {
+  background: white;
+  color: black;
+  border-radius: 9999px;
+  padding: 8px;
+}
+
+.timeline-panel.collapsed .timeline-collapse-btn:hover {
+  background: #f3f4f6;
 }
 
 /* 过滤器 */

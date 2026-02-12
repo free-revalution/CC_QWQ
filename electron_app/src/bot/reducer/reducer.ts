@@ -160,7 +160,7 @@ export function messageReducer(
       // Extract text from content array or use raw content
       const contentArray = Array.isArray(msg.content) ? msg.content : [];
       const textBlock = contentArray.find(isTextBlock);
-      const content = textBlock?.text ?? String(msg.content);
+      const content = textBlock?.text ?? (msg.content === null ? 'null' : String(msg.content));
 
       const userMsg: UserTextMessage = {
         id: allocateId(),

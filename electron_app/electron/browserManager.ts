@@ -63,6 +63,7 @@ export class BrowserManager {
   private pages: Map<string, Page> = new Map()
   private config: BrowserConfig
   private initializationState: InitializationState = 'uninitialized'
+  private initPromise: Promise<void> | null = null
 
   private constructor(config: BrowserConfig = {}) {
     this.config = {
@@ -87,6 +88,30 @@ export class BrowserManager {
   }
 
   /**
+   * 确保浏览器已初始化（懒加载）
+   * 在任何需要浏览器的操作前调用此方法
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.isInitialized()) {
+      return
+    }
+
+    // 如果正在初始化，等待完成
+    if (this.initPromise) {
+      await this.initPromise
+      return
+    }
+
+    // 开始初始化
+    this.initPromise = this.initialize()
+    try {
+      await this.initPromise
+    } finally {
+      this.initPromise = null
+    }
+  }
+
+  /**
    * 初始化浏览器
    */
   async initialize(): Promise<void> {
@@ -102,6 +127,7 @@ export class BrowserManager {
     }
 
     this.initializationState = 'initializing'
+    console.log('[BrowserManager] Initializing browser on demand...')
 
     try {
       console.log('[BrowserManager] Initializing browser...')
@@ -156,7 +182,7 @@ export class BrowserManager {
       if (this.context) {
         try {
           await this.context.close()
-        } catch (e) {
+        } catch {
           // Ignore errors during cleanup
         }
         this.context = null
@@ -164,7 +190,7 @@ export class BrowserManager {
       if (this.browser) {
         try {
           await this.browser.close()
-        } catch (e) {
+        } catch {
           // Ignore errors during cleanup
         }
         this.browser = null
@@ -237,10 +263,13 @@ export class BrowserManager {
    * 创建新页面
    */
   async newPage(options: PageOptions = {}): Promise<BrowserResult<string>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -300,10 +329,13 @@ export class BrowserManager {
    * 关闭指定页面
    */
   async closePage(pageId: string): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -354,10 +386,13 @@ export class BrowserManager {
    * 导航到 URL
    */
   async goto(pageId: string, url: string, options: NavigateOptions = {}): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -369,13 +404,23 @@ export class BrowserManager {
       }
     }
 
-    // Validate URL
+    // Validate URL and protocol
+    let urlObj: URL
     try {
-      new URL(url)
+      urlObj = new URL(url)
     } catch {
       return {
         success: false,
         error: `Invalid URL: ${url}`
+      }
+    }
+
+    // Protocol whitelist - only allow http and https
+    const allowedProtocols = ['http:', 'https:']
+    if (!allowedProtocols.includes(urlObj.protocol)) {
+      return {
+        success: false,
+        error: `Protocol not allowed: ${urlObj.protocol}. Only http and https are permitted.`
       }
     }
 
@@ -409,10 +454,13 @@ export class BrowserManager {
    * 截图
    */
   async screenshot(pageId: string, options: ScreenshotOptions = {}): Promise<BrowserResult<string>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -456,10 +504,13 @@ export class BrowserManager {
    * 点击元素
    */
   async click(pageId: string, selector: string): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -503,10 +554,13 @@ export class BrowserManager {
    * 填写输入框
    */
   async fill(pageId: string, selector: string, value: string): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -550,10 +604,13 @@ export class BrowserManager {
    * 获取元素文本
    */
   async getText(pageId: string, selector: string): Promise<BrowserResult<string>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -598,10 +655,13 @@ export class BrowserManager {
    * 等待元素
    */
   async waitFor(pageId: string, selector: string, timeout?: number): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -667,11 +727,14 @@ export class BrowserManager {
    * @param script - JavaScript code to execute (will be eval'd)
    * @returns Result of script execution
    */
-  async evaluate(pageId: string, script: string): Promise<BrowserResult<any>> {
-    if (!this.isInitialized()) {
+  async evaluate<T = unknown>(pageId: string, script: string): Promise<BrowserResult<T>> {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -695,7 +758,6 @@ export class BrowserManager {
       console.log(`[BrowserManager] Evaluating script on page '${pageId}'`)
 
       const result = await page.evaluate((js: string) => {
-        // eslint-disable-next-line no-eval
         return eval(js)
       }, script)
 
@@ -703,7 +765,7 @@ export class BrowserManager {
 
       return {
         success: true,
-        data: result
+        data: result as T
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -719,10 +781,13 @@ export class BrowserManager {
    * 获取所有 Cookies
    */
   async getCookies(pageId: string): Promise<BrowserResult<CookieOptions[]>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -768,10 +833,13 @@ export class BrowserManager {
    * 设置 Cookie
    */
   async setCookie(pageId: string, cookie: CookieOptions): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -830,10 +898,13 @@ export class BrowserManager {
    * 上传文件
    */
   async upload(pageId: string, selector: string, filePath: string): Promise<BrowserResult<void>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -886,10 +957,13 @@ export class BrowserManager {
    * 下载文件
    */
   async download(pageId: string, selector: string): Promise<BrowserResult<string>> {
-    if (!this.isInitialized()) {
+    // 懒加载：自动初始化浏览器
+    try {
+      await this.ensureInitialized()
+    } catch (error) {
       return {
         success: false,
-        error: 'Browser not initialized'
+        error: `Failed to initialize browser: ${error instanceof Error ? error.message : String(error)}`
       }
     }
 
@@ -922,8 +996,6 @@ export class BrowserManager {
       const download = await downloadPromise
 
       // 获取保存路径（使用临时目录）
-      const os = await import('os')
-      const path = await import('path')
       const savePath = path.join(os.tmpdir(), `claude-download-${Date.now()}-${download.suggestedFilename()}`)
 
       // 保存文件

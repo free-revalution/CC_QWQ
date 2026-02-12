@@ -9,7 +9,7 @@ import type {
   LogEntry,
   LogFilter,
   LogLevel
-} from '../src/types/operation.js'
+} from '../src/types/operation'
 
 export class OperationLogger extends EventEmitter {
   private logs: LogEntry[] = []

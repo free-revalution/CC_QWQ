@@ -5,7 +5,7 @@
  */
 
 import { EventEmitter } from 'events'
-import { createRequire } from 'module'
+
 import type { Request, Response } from 'express'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js'
@@ -13,15 +13,13 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema
 } from '@modelcontextprotocol/sdk/types.js'
-import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operation.js'
-import type { ApprovalEngine } from './approvalEngine.js'
+import type { MCPToolDefinition, SSEConnectionInfo } from '../src/types/operation'
+import type { ApprovalEngine } from './approvalEngine'
 import type { OperationLogger } from './operationLogger'
-import type { OperationExecutor } from './operationExecutor.js'
+import type { OperationExecutor } from './operationExecutor'
 import type { Server as HttpServer } from 'http'
-import { getBrowserManager } from './browserManager.js'
-
-const require = createRequire(import.meta.url)
-const express = require('express')
+import { getBrowserManager } from './browserManager'
+import express from 'express'
 
 export class MCPProxyServer extends EventEmitter {
   private server: Server | null = null

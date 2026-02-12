@@ -4,7 +4,7 @@
  * 支持导出为 JSON、CSV、Markdown 三种格式
  */
 
-import type { LogEntry, ExportOptions } from '../src/types/operation.js'
+import type { LogEntry, ExportOptions } from '../src/types/operation'
 
 export class LogExporter {
   /**

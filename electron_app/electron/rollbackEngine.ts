@@ -6,9 +6,9 @@
 
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import type { RollbackResult, RollbackPreview } from '../src/types/operation.js'
-import type { CheckpointManager } from './checkpointManager.js'
-import type { OperationExecutor } from './operationExecutor.js'
+import type { RollbackResult, RollbackPreview } from '../src/types/operation'
+import type { CheckpointManager } from './checkpointManager'
+import type { OperationExecutor } from './operationExecutor'
 
 export class RollbackEngine {
   constructor(
