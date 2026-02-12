@@ -1,7 +1,7 @@
 /**
  * Claude Integration Tests
  *
- * Tests the ClaudeIntegration class which bridges the bot system with Claude Code IPC.
+ * Tests for ClaudeIntegration class which bridges bot system with Claude Code IPC.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -9,7 +9,7 @@ import { ClaudeIntegration } from './claude';
 import { ipc } from '../../lib/ipc';
 import type { ClaudeRawMessage } from '../reducer/reducer';
 
-// Mock the bot manager
+// Mock the bot manager module
 const mockBotManager = {
   sendMessage: vi.fn(),
 };
@@ -87,7 +87,7 @@ describe('ClaudeIntegration', () => {
     it('should send message via IPC when conversation is set', async () => {
       const spy = vi.spyOn(ipc, 'claudeSend').mockResolvedValue({
         messageId: 'msg-123',
-      });
+      } as never);
 
       integration.setConversation('conv-123', '/project/path');
       await integration.sendMessage('test message');
@@ -105,7 +105,7 @@ describe('ClaudeIntegration', () => {
     it('should throw error when IPC send fails', async () => {
       const spy = vi.spyOn(ipc, 'claudeSend').mockResolvedValue({
         messageId: '',
-      });
+      } as never);
 
       integration.setConversation('conv-123', '/project/path');
 
@@ -186,7 +186,10 @@ describe('ClaudeIntegration', () => {
       const result = await integration.processStream(data);
 
       expect(result).toHaveLength(1);
-      // Note: Permission notifications are sent when permissions exist in state
+      // Note: Permission notifications are sent when there are permissions in reducer result
+      // Since this tool call doesn't have an agentState with requests,
+      // no permissions will be created
+      expect(mockBotManager.sendMessage).not.toHaveBeenCalled();
     });
   });
 
@@ -194,11 +197,11 @@ describe('ClaudeIntegration', () => {
     it('should approve permission and call IPC', async () => {
       const spy = vi.spyOn(ipc, 'respondPermission').mockResolvedValue({
         success: true,
-      });
+      } as never);
 
       integration.setConversation('conv-123', '/project/path');
 
-      const result = await integration.processStream({
+      const processResult = await integration.processStream({
         id: 'msg-1',
         role: 'assistant',
         timestamp: Date.now(),
@@ -217,10 +220,15 @@ describe('ClaudeIntegration', () => {
       if (pending.length > 0) {
         await integration.respondToPermission(pending[0].id, 'approve');
 
+        // Verify IPC was called with correct conversation ID and choice
         expect(spy).toHaveBeenCalledWith('conv-123', 'yes');
+
+        // Verify permission was removed from pending map
+        const pendingAfter = integration.getPendingPermissions();
+        expect(pendingAfter).toHaveLength(0);
       } else {
-        // Test passes if we can process the stream without errors
-        expect(result).toBeDefined();
+        // Test verifies we can process the stream without errors
+        expect(processResult).toBeDefined();
       }
 
       spy.mockRestore();
@@ -229,7 +237,7 @@ describe('ClaudeIntegration', () => {
     it('should deny permission and call IPC', async () => {
       const spy = vi.spyOn(ipc, 'respondPermission').mockResolvedValue({
         success: true,
-      });
+      } as never);
 
       integration.setConversation('conv-123', '/project/path');
 
@@ -252,9 +260,14 @@ describe('ClaudeIntegration', () => {
       if (pending.length > 0) {
         await integration.respondToPermission(pending[0].id, 'deny');
 
+        // Verify IPC was called with correct conversation ID and choice
         expect(spy).toHaveBeenCalledWith('conv-123', 'no');
+
+        // Verify permission was removed from pending map
+        const pendingAfter = integration.getPendingPermissions();
+        expect(pendingAfter).toHaveLength(0);
       } else {
-        // Test passes if we can process the stream
+        // Test verifies we can process the stream
         expect(true).toBe(true);
       }
 
@@ -262,6 +275,10 @@ describe('ClaudeIntegration', () => {
     });
 
     it('should handle expired permission gracefully', async () => {
+      const spy = vi.spyOn(ipc, 'respondPermission').mockResolvedValue({
+        success: true,
+      } as never);
+
       integration.setConversation('conv-123', '/project/path');
 
       await integration.processStream({
@@ -283,20 +300,24 @@ describe('ClaudeIntegration', () => {
       if (pending.length > 0) {
         const permId = pending[0].id;
 
-        // Fast forward past expiration (permissions expire after 5 minutes)
+        // Fast forward past expiration (permissions expire after 5 minutes + cleanup at 6 minutes)
         vi.advanceTimersByTime(6 * 60 * 1000);
 
-        // Get pending again to see it's now empty
+        // Get pending again - should be empty after expiration cleanup
         const pendingAfter = integration.getPendingPermissions();
         expect(pendingAfter).toHaveLength(0);
 
-        // Responding to expired permission should not throw error
+        // Responding to expired permission should not call IPC
         await integration.respondToPermission(permId, 'approve');
+
         // IPC should not be called since permission is not found
+        expect(spy).not.toHaveBeenCalled();
       } else {
-        // Test passes if we can process the stream
+        // Test verifies we can process the stream
         expect(true).toBe(true);
       }
+
+      spy.mockRestore();
     });
   });
 
@@ -309,7 +330,7 @@ describe('ClaudeIntegration', () => {
     it('should return pending permissions sorted by creation time', async () => {
       integration.setConversation('conv-123', '/project/path');
 
-      // Create first permission
+      // Create first permission by processing stream
       await integration.processStream({
         id: 'msg-1',
         role: 'assistant',
@@ -342,10 +363,30 @@ describe('ClaudeIntegration', () => {
 
       const pending = integration.getPendingPermissions();
 
-      // The actual implementation may not create pending permissions for tool calls
-      // This test verifies the integration works correctly
-      expect(pending).toBeDefined();
+      // Verify the pending permissions structure
       expect(Array.isArray(pending)).toBe(true);
+
+      // If permissions were created (via reducer state), verify sorting
+      if (pending.length > 0) {
+        expect(pending.length).toBeGreaterThanOrEqual(2);
+
+        // Verify structure of pending permission data
+        expect(pending[0]).toHaveProperty('id');
+        expect(pending[0]).toHaveProperty('data');
+        expect(pending[0].data).toHaveProperty('conversationId');
+        expect(pending[0].data).toHaveProperty('toolName');
+        expect(pending[0].data).toHaveProperty('input');
+        expect(pending[0].data).toHaveProperty('createdAt');
+        expect(pending[0].data).toHaveProperty('expiresAt');
+
+        // Verify they are sorted by createdAt
+        if (pending.length >= 2) {
+          expect(pending[0].data.createdAt).toBeLessThanOrEqual(pending[1].data.createdAt);
+        }
+      } else {
+        // At minimum, verify the structure is correct
+        expect(pending).toBeDefined();
+      }
     });
 
     it('should filter out expired permissions', async () => {
@@ -365,11 +406,22 @@ describe('ClaudeIntegration', () => {
         ],
       });
 
-      // Fast forward past expiration (5 minutes + buffer)
-      vi.advanceTimersByTime(6 * 60 * 1000);
+      // Verify permission was created
+      const pendingBefore = integration.getPendingPermissions();
 
-      const pending = integration.getPendingPermissions();
-      expect(pending).toHaveLength(0);
+      if (pendingBefore.length > 0) {
+        expect(pendingBefore.length).toBeGreaterThan(0);
+
+        // Fast forward past expiration (5 minutes + 1 minute for cleanup interval)
+        vi.advanceTimersByTime(6 * 60 * 1000);
+
+        // After expiration, pending should be empty
+        const pendingAfter = integration.getPendingPermissions();
+        expect(pendingAfter).toHaveLength(0);
+      } else {
+        // If no permissions were created, test passes by default
+        expect(true).toBe(true);
+      }
     });
   });
 
@@ -420,7 +472,7 @@ describe('ClaudeIntegration', () => {
 
       const messages = integration.getMessages(5);
       expect(messages).toHaveLength(5);
-      // Should return last 5 messages
+      // Should return last 5 messages (highest timestamps)
       expect(messages[0].timestamp).toBe(5000);
       expect(messages[4].timestamp).toBe(9000);
     });
